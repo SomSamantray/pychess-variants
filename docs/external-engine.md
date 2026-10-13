@@ -1,0 +1,340 @@
+# Local external engine analysis
+
+## Status and tracking
+
+Design agreed on 2026-10-13. Research and the initial project workspace are complete;
+runtime implementation and browser integration have not started.
+
+The standalone Python project lives at `~/pychess-external-engine`. This document
+tracks both that application's implementation and its integration with Pychess.
+Keep implementation in the standalone project and frontend changes in this repository.
+
+Mark a checklist item complete only after its acceptance checks pass. Record the
+relevant commit, tests, and any remaining limitation in the progress log below.
+An installed rules library or a successful engine handshake alone does not prove
+that analysis works for a variant.
+
+## Goal and hosting constraint
+
+Let users analyse positions on the Pychess website with native engines running on
+their own computers, using the existing evaluation, PV, and board displays.
+
+The Python bridge and engine both run locally. Pychess continues to use its existing
+single Heroku dyno: this feature requires no extra hosted Python process, public
+broker, MongoDB collection, or account API token. The browser sends analysis requests
+directly to the local application; engine output does not pass through Heroku.
+
+The first release targets ordinary single-board analysis with a compatible UCI
+engine. The design must accommodate custom Fairy-Stockfish rules and additional
+engine adapters without promising universal engine coverage.
+
+## Architecture
+
+```text
+Heroku: existing Pychess application
+    |
+    | serves analysis page and existing position/rules data
+    v
+User's browser: Pychess analysis controller
+    |
+    | paired, cross-origin HTTP requests to a loopback address
+    | newline-delimited JSON responses
+    v
+User's computer: one Python application
+    - local HTTP API and pairing
+    - engine capabilities and search lifecycle
+    - pyffish position/history/PV validation
+    - UCI subprocess adapter
+    |
+    | stdin/stdout
+    v
+User's native engine: Fairy-Stockfish or another compatible engine
+```
+
+Combine the responsibilities of Lichess's broker and provider into one local
+application. There is no need for provider work polling, public engine registration,
+or a queue routing jobs across machines. Start with one engine process and serialize
+searches. Define explicit ownership for simultaneous tabs rather than letting them
+silently replace each other's work.
+
+Proposed package layout, to be created during implementation:
+
+```text
+src/pychess_external_engine/
+    cli.py           # Local executable/configuration and application startup
+    app.py           # aiohttp routes, pairing, and streamed responses
+    protocol.py      # Versioned request/result/error schemas
+    uci.py           # Handshake, capabilities, options, and output parsing
+    search.py        # Serialized searches, cancellation, and process lifecycle
+    rules.py         # pyffish validation and exact variant definitions
+tests/
+```
+
+`pyffish` supplies rules and move handling. Its current API does not expose the
+analysis search needed here; the native engine subprocess performs the search.
+Python manages HTTP and process I/O with `asyncio`/`aiohttp`.
+
+## User workflow
+
+1. Install the local application and a supported native engine.
+2. Configure the engine executable, optional networks, and resource limits locally.
+3. Start the application; it displays its loopback address and a pairing token.
+4. Select the external engine in Pychess and enter the local connection details.
+5. Grant browser loopback/network permission if requested.
+6. Analyse normally; moving to another position cancels the previous search.
+
+Store connection preferences locally in the browser, scoped to the Pychess origin.
+Keep credentials out of URLs, console logs, PGNs, Study data, and server requests.
+Provide disconnect/forget controls and a way to rotate the local pairing token.
+Account synchronization and remote-engine access are outside the first release.
+
+## Browser connection and local access
+
+Browser compatibility is the first implementation gate. Verify a real HTTPS page
+connecting to loopback before building the full engine/UI flow.
+
+- Bind to loopback only; do not expose the application to the LAN by default.
+- Use a fixed, documented default port with a local configuration override.
+- Allow explicitly configured Pychess origins, including development origins when
+  requested. Validate the request origin and host and require a pairing token for
+  engine operations; do not use wildcard CORS for authenticated requests.
+- Answer CORS preflight requests without disclosing engine details or starting work.
+- Implement the browser's applicable local-network access requirements. Permission
+  denial must produce actionable connection UI rather than repeated prompts.
+- Check actual served headers, including proxy CSP if present, and the existing
+  COOP/COEP configuration. Preserve browser/WASM engine functionality.
+- Verify Chrome/Edge, Firefox, and Safari. Document supported versions and any
+  restrictions; do not assume that loopback HTTP works identically in all browsers.
+
+Relevant browser references:
+
+- [Local network access](https://developer.mozilla.org/en-US/docs/Web/Security/Defenses/Local_network_access)
+- [Locally delivered mixed resources](https://developer.mozilla.org/en-US/docs/Web/Security/Defenses/Mixed_content#loading_locally_delivered_mixed-resources)
+
+A browser extension/native-messaging adapter is a possible later fallback if direct
+loopback access cannot support an important browser. It is not a requirement for
+the initial HTTP prototype. Record the prototype result before committing to the
+final transport and endpoint details.
+
+## Proposed protocol
+
+Use a small versioned API with authenticated capability discovery and an analysis
+endpoint returning newline-delimited JSON. Final route names and schemas belong
+to phase 1; these are the required semantics.
+
+An analysis request identifies:
+
+- Protocol version, tab/session ID, and unique search/request ID.
+- Display variant and resolved engine variant; explicit Chess960 mode.
+- Initial FEN and the exact move history to the selected tree node, with a
+  current-position FEN for correlation and validation.
+- Custom rules and their SHA-256 hash when required, including inherited definitions.
+- Requested Threads, Hash, MultiPV, and supported depth/time/node limits.
+
+Use engine coordinate strings, preserving extended board ranks, fairy pieces,
+drops, promotion/demotion suffixes, and compound moves. Do not deserialize moves
+through a chess-only board library. The request's Chess960 mode and move/FEN
+conventions must agree with the engine adapter and rules validator.
+
+Stream explicit events for started, evaluation, completed, and error states.
+Evaluation events carry the search ID, elapsed time, nodes, depth, MultiPV lines,
+and cp/mate scores. Define scores as **side-to-move relative**, matching Pychess's
+current local-analysis display, and make that convention part of the schema.
+Do not copy Lichess's White-relative broker output into this path unchanged.
+
+Reject invalid positions, histories, unsupported variants, and incompatible rules
+before issuing `position`/`go`. Enforce request-size and resource limits locally.
+Support engines lacking optional Threads, Hash, or variant options through
+capability discovery and explicit adapter defaults.
+
+Parse UCI `info` fields without depending on a single engine's field order.
+Handle partial MultiPV updates, score bounds, terminal positions, and engine-specific
+non-score information. Preserve valid extended move tokens and validate PV prefixes
+with the appropriate rules backend before returning actionable moves.
+
+## Search lifecycle
+
+On navigation or engine selection changes, abort the old response and stop its
+search. Disconnection and tab closure must also release engine work. Tag all results
+with their originating search ID and ignore late output in the frontend even when
+its first move happens to remain legal at the new position.
+
+Drain the old search through `bestmove` before changing options or sending the next
+`position`/`go`. Use bounded readiness/stop timeouts and restart a stuck subprocess.
+Keep `ucinewgame` and hash reuse tied to deliberate session/rules transitions.
+Define idle shutdown, engine crash, bridge restart, and reconnect behaviour.
+
+Configure executable paths and engine-specific options locally. Browser requests
+must not choose arbitrary commands, file paths, or shell arguments. Launch configured
+executables with argument arrays. Load validated custom rules through controlled
+engine input or application-managed files, and configure network paths locally.
+
+## Variant and rules compatibility
+
+External search capability is independent of browser search, rules replay, server
+Fishnet analysis, and Practice capability. See
+[Engine-Capabilities.md](Engine-Capabilities.md).
+
+| Variant category | Planned treatment |
+| --- | --- |
+| Ordinary single-board Fairy-Stockfish variants | Initial implementation; discover actual engine and rules support |
+| Site/custom Fairy-Stockfish variants | Supply exact definitions and inheritance chains, verify hashes, then discover capabilities |
+| Chess960 and engine aliases | Resolve the same engine variant and notation conventions as Pychess |
+| Alice | Later optional Alice-capable engine and `pyffish_alice` adapter |
+| Two-board variants | Later integration with Pychess's board scheduling and changing pocket state |
+| Fog of War and Jieqi | Separate analysis policy and state model; no generic claim of meaningful search support |
+| Native USI/UCCI engines | Later protocol/notation adapters; UCI support alone does not cover these engines |
+
+Load custom definitions **before** querying the engine's supported variants. Pin
+Study snapshots by content hash; never silently replace historical rules with the
+current definition of the same name. Resolve engine aliases such as CWDA matchups
+and Capablanca/Embassy castling consistently with the game and browser rules.
+
+Keep rule registration controlled: `pyffish` has process-wide configuration. Use
+bounded registration/lifetime management or replace an isolated rules worker when
+needed, rather than accumulating arbitrary definitions forever. Validate incoming
+FEN geometry/material and rules payloads before invoking native code, reusing the
+existing Pychess admission rules as the reference.
+
+## Pychess integration
+
+Introduce a search backend interface for start, stop, destroy, capabilities, status,
+and evaluation delivery. Adapt the existing browser engine first, then add the local
+HTTP implementation. Continue using the existing score/PV/SAN/arrow displays.
+
+Relevant integration points:
+
+- [Analysis controller](../client/analysis/analysisCtrl.ts): engine lifecycle and evaluation delivery.
+- [Analysis settings](../client/analysis/analysisSettings.ts): engine selection and connection controls.
+- [Analysis context](../client/analysis/analysisContext.ts): page capabilities.
+- [Analysis extensions](../client/analysis/analysisExtension.ts): Study visibility and computer-search permissions.
+- [Engine variant resolution](../client/cgCtrl.ts): resolved variant used by rules and search.
+- [FairyBoard](../server/fairy/fairy_board.py): engine aliases and alternate rules backends.
+- [Study position validation](../server/study/engine.py): admission checks before native move generation.
+- [Fishnet rules payloads](../server/fishnet.py): exact custom definitions and inheritance/hash conventions.
+- [Two-board engine](../client/two-board/analysis/engine.ts): later board scheduling integration.
+
+Preserve ongoing-game and anti-cheat restrictions, Study computer permissions,
+concealed lesson content, and extension-owned searches. The external adapter must
+not bypass these gates. Keep Practice on its existing backend until its bounded
+search and shared-engine ownership requirements are explicitly supported and tested.
+Keep transient external evaluations separate from saved server analysis/advice.
+
+## Implementation checklist
+
+### Phase 0: research and workspace
+
+- [x] Trace registration, browser transport, broker, and UCI provider in Lichess.
+- [x] Identify chess-specific variant/FEN/move/PV dependencies in the Rust broker.
+- [x] Probe the Python provider against native Fairy-Stockfish for Shogi, Xiangqi,
+  Grand Chess, and Orda; check returned best moves with `pyffish`.
+- [x] Select one local Python application with no additional Heroku process.
+- [x] Create `~/pychess-external-engine`, its initial README, and this tracking plan.
+
+### Phase 1: prove browser transport and freeze the initial protocol
+
+- [ ] Build a minimal loopback HTTP prototype with pairing and a fake result stream.
+- [ ] Test HTTPS-to-loopback streaming, preflight, permission grant/denial, and
+  abort/disconnect under Pychess's actual response headers.
+- [ ] Record browser/OS compatibility and any required header changes or fallback.
+- [ ] Choose the port, routes, protocol version, request/result schema, and score POV.
+- [ ] Define resource bounds, token lifecycle, and multi-tab ownership/busy behaviour.
+
+Acceptance: a supported browser receives and cancels a paired local stream without
+new Heroku infrastructure or breaking WASM analysis.
+
+### Phase 2: local Python application and UCI lifecycle
+
+- [ ] Add package metadata, CLI, configuration, license/attribution, and development checks.
+- [ ] Launch configured engines, discover options, and report actual capabilities.
+- [ ] Implement serialized searches, robust UCI parsing, MultiPV, and streaming events.
+- [ ] Handle stop/drain sequencing, deadlines, crashes, disconnects, and idle shutdown.
+- [ ] Add fake-engine tests for lifecycle races and a real Fairy-Stockfish smoke test.
+
+Acceptance: a paired client can search, cancel, and replace a position; late output
+never becomes the next search's result, and engine failure releases resources.
+
+### Phase 3: variant rules and exact custom definitions
+
+- [ ] Add `pyffish` position/history/PV validation with native admission bounds.
+- [ ] Load site/custom definitions and inherited bases before discovering engine variants.
+- [ ] Verify rules hashes, Study snapshots, Chess960, and resolved engine aliases.
+- [ ] Test extended ranks, drops, promotions/demotions, gating/compound moves, repetition,
+  terminal positions, black-to-move scores, and unsupported-engine combinations.
+- [ ] Define rules-worker isolation/lifetime and explicit configuration mismatch errors.
+
+Acceptance: representative single-board variants use matching rules throughout;
+invalid or incompatible inputs fail before engine search.
+
+### Phase 4: Pychess frontend integration
+
+- [ ] Introduce the search backend interface while retaining browser-engine behaviour.
+- [ ] Add paired local connection, engine selection, disconnect/forget, and status UI.
+- [ ] Deliver external events to existing evaluation/PV displays with request correlation.
+- [ ] Make external capability independent of `variantSupportedByFSF`.
+- [ ] Preserve anti-cheat, ongoing-game, Study, Practice, and concealed-content restrictions.
+- [ ] Test tree navigation, chapter/rules switches, multiple tabs, backend changes,
+  bridge restarts, unsupported variants, and permission denial.
+- [ ] Run required frontend gates and browser checks; use the CSS skill if styling changes.
+
+Acceptance: users can select a local native engine and analyse safely through the
+normal single-board UI; the browser-engine path remains functional.
+
+### Phase 5: packaging and first release
+
+- [ ] Document installation, supported Python/OS/browser versions, pairing, engine
+  configuration, custom rules, networks, resource limits, and troubleshooting.
+- [ ] Verify installation in clean environments on the supported operating systems.
+- [ ] Publish a supported variant/engine matrix based on completed checks.
+- [ ] Complete release checks in both repositories and record versions/commit references.
+
+Acceptance: another user can install, pair, analyse, and stop the application using
+only the published instructions. Publishing/release is a separate authorized action.
+
+### Phase 6: optional engine and workflow expansion
+
+- [ ] Add Alice engine/rules support with explicit capability reporting.
+- [ ] Adapt two-board scheduling and state correlation without claiming joint search
+  from independent single-board evaluations.
+- [ ] Evaluate hidden-information analysis policies and suitable engine support.
+- [ ] Add USI/UCCI adapters and conversion tests if requested.
+- [ ] Consider Practice bounded searches and browser-extension fallback if needed.
+
+Acceptance: each addition has its own engine, rules, browser, and permission checks;
+partial support remains visible rather than being inferred from variant names.
+
+## Verification policy
+
+For bridge implementation, run its own Python format/lint/type checks and targeted
+protocol, subprocess, and rules tests. Select supported Python versions in phase 2
+based on `pyffish` wheel availability and test those versions in CI.
+
+For Pychess implementation, follow `AGENTS.md` and the `pychess-testing` skill:
+frontend changes require `yarn lint`, `yarn typecheck`, `yarn md`, and `yarn test`,
+plus relevant browser verification. Server changes additionally require the Python
+gates and targeted tests. Run full Node CI, including `yarn dev`, when doing full
+release verification. Run tournament coverage only when affected.
+
+Documentation-only updates require Markdown rendering/link checks and diff review;
+they do not establish runtime compatibility or complete implementation phases.
+
+## Progress log
+
+| Date | Milestone | Evidence and limitations |
+| --- | --- | --- |
+| 2026-10-13 | Phase 0 research | Inspected local lila `4641264ccb`, lila-ws `89b1e88`, external-engine `d0eeb24`, and lila-engine `bfb00c1`. HTTP transport is independent of lila-ws. |
+| 2026-10-13 | Native provider probe | Python provider plus Fairy-Stockfish `051026 LB`, NNUE disabled, depth 2: Shogi, Xiangqi, Grand Chess, and Orda best moves were legal according to `pyffish` 0.0.90. This is a shallow compatibility probe, not full protocol/browser/variant coverage. |
+| 2026-10-13 | Capability discovery finding | Provider queried `UCI_Variant` before setting `VariantPath`, so Orda was searchable after loading rules but absent from its cached advertisement. Fix discovery order in the new adapter. |
+| 2026-10-13 | Workspace and design | Created the separate project workspace and local-only plan. Implementation starts with the HTTPS-to-loopback prototype. |
+
+## Upstream references and reuse
+
+- [Lichess external-engine](https://github.com/lichess-org/external-engine): Python provider; GPL-3.0.
+- [Lichess lila-engine](https://github.com/lichess-org/lila-engine): hosted Rust broker; AGPL-3.0-or-later.
+- [Lichess browser external adapter](https://github.com/lichess-org/lila/blob/master/ui/lib/src/ceval/engines/externalEngine.ts).
+- [Fairy-Stockfish variant standards](https://fairy-stockfish.github.io/chess-variant-standards/).
+
+Borrow the smallest useful lifecycle/parser/adapter pieces and preserve upstream
+notices and attribution. The initial workspace contains documentation only; no
+upstream implementation has been copied. Confirm license obligations when adding
+code and distributing the Python application or engine binaries.
