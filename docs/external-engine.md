@@ -6,6 +6,12 @@ Design agreed on 2026-10-13. Phase 1 is in progress: the standalone project has 
 paired loopback transport prototype with fake results. Native engine search and
 Pychess frontend integration have not started.
 
+Chromium transport and permission allow/deny are verified against the deployed HTTPS
+analysis page. Firefox requires a headed manual permission check, Linux WebKit rejects
+HTTP loopback, and real Edge/Safari checks are pending. The initial protocol is
+specified in the standalone project's `docs/protocol.md`; browser evidence and
+reproduction steps are in its `docs/browser-compatibility.md`.
+
 The standalone Python project lives at `~/pychess-external-engine`. This document
 tracks both that application's implementation and its integration with Pychess.
 Keep implementation in the standalone project and frontend changes in this repository.
@@ -235,11 +241,13 @@ Keep transient external evaluations separate from saved server analysis/advice.
 ### Phase 1: prove browser transport and freeze the initial protocol
 
 - [x] Build a minimal loopback HTTP prototype with pairing and a fake result stream.
-- [ ] Test HTTPS-to-loopback streaming, preflight, permission grant/denial, and
+- [x] Test HTTPS-to-loopback streaming, preflight, permission grant/denial, and
   abort/disconnect under Pychess's actual response headers.
-- [ ] Record browser/OS compatibility and any required header changes or fallback.
-- [ ] Choose the port, routes, protocol version, request/result schema, and score POV.
-- [ ] Define resource bounds, token lifecycle, and multi-tab ownership/busy behaviour.
+- [x] Record browser/OS compatibility and any required header changes or fallback.
+- [x] Choose the port, routes, protocol version, request/result schema, and score POV.
+- [x] Define resource bounds, token lifecycle, and multi-tab ownership/busy behaviour.
+- [ ] Complete the headed Firefox permission check and real Edge/Safari checks;
+  decide the first-release browser matrix and any required fallback from those results.
 
 Acceptance: a supported browser receives and cancels a paired local stream without
 new Heroku infrastructure or breaking WASM analysis.
@@ -327,7 +335,9 @@ they do not establish runtime compatibility or complete implementation phases.
 | 2026-10-13 | Native provider probe | Python provider plus Fairy-Stockfish `051026 LB`, NNUE disabled, depth 2: Shogi, Xiangqi, Grand Chess, and Orda best moves were legal according to `pyffish` 0.0.90. This is a shallow compatibility probe, not full protocol/browser/variant coverage. |
 | 2026-10-13 | Capability discovery finding | Provider queried `UCI_Variant` before setting `VariantPath`, so Orda was searchable after loading rules but absent from its cached advertisement. Fix discovery order in the new adapter. |
 | 2026-10-13 | Workspace and design | Created the separate project workspace and local-only plan. Implementation starts with the HTTPS-to-loopback prototype. |
-| 2026-10-13 | Phase 1 transport prototype | Added `tools/transport_probe.py` and 10 transport/configuration tests in the standalone project. Pairing, exact origin/host checks, CORS/PNA preflights, request limits, disconnect cleanup, and exclusive stream ownership pass. Ruff format/lint and Pyrefly pass. Browser compatibility remains unverified. |
+| 2026-10-13 | Phase 1 transport prototype | Standalone commit `cd3adb3`: added `tools/transport_probe.py` and 10 transport/configuration tests. Pairing, exact origin/host checks, CORS/PNA preflights, request limits, disconnect cleanup, and exclusive stream ownership pass. Ruff format/lint and Pyrefly pass. Browser compatibility was not yet verified at this step. |
+| 2026-10-13 | Phase 1 browser probe | Standalone commit `e3cfcd3`: Chromium 154.0.8037.57 on Linux passed paired capabilities, incorrect pairing, streamed fake evaluations, competing tabs, abort/tab-close cleanup, and permission denial from the deployed HTTPS analysis page. Existing COOP/COEP and SharedArrayBuffer remain available; no header changes. Browser-engine search itself is not yet tested. Firefox 155 needs manual Allow; Linux WebKit 26.6 rejects HTTP loopback. Edge/Safari remain unverified. |
+| 2026-10-13 | Phase 1 protocol decisions | Standalone `docs/protocol.md` defines port 9670, v1 authenticated capabilities/analysis routes, side-to-move scores, exact custom rules/history correlation, resource bounds, per-start token rotation, and one-search ownership. Full engine semantics remain phase-2/3 work. |
 
 ## Upstream references and reuse
 
