@@ -7,8 +7,9 @@ paired loopback transport prototype with fake results. Native engine search and
 Pychess frontend integration have not started.
 
 Chromium transport and permission allow/deny are verified against the deployed HTTPS
-analysis page. Firefox requires a headed manual permission check, Linux WebKit rejects
-HTTP loopback, and real Edge/Safari checks are pending. The initial protocol is
+analysis page. Firefox passed the headed check after the user allowed access; its
+denial check remains open. Linux WebKit rejects HTTP loopback, and real Edge/Safari
+checks are pending. The initial protocol is
 specified in the standalone project's `docs/protocol.md`; browser evidence and
 reproduction steps are in its `docs/browser-compatibility.md`.
 
@@ -246,7 +247,8 @@ Keep transient external evaluations separate from saved server analysis/advice.
 - [x] Record browser/OS compatibility and any required header changes or fallback.
 - [x] Choose the port, routes, protocol version, request/result schema, and score POV.
 - [x] Define resource bounds, token lifecycle, and multi-tab ownership/busy behaviour.
-- [ ] Complete the headed Firefox permission check and real Edge/Safari checks;
+- [x] Complete the headed Firefox permission allow check.
+- [ ] Complete Firefox denial and real Edge/Safari checks;
   decide the first-release browser matrix and any required fallback from those results.
 
 Acceptance: a supported browser receives and cancels a paired local stream without
@@ -338,6 +340,7 @@ they do not establish runtime compatibility or complete implementation phases.
 | 2026-10-13 | Phase 1 transport prototype | Standalone commit `cd3adb3`: added `tools/transport_probe.py` and 10 transport/configuration tests. Pairing, exact origin/host checks, CORS/PNA preflights, request limits, disconnect cleanup, and exclusive stream ownership pass. Ruff format/lint and Pyrefly pass. Browser compatibility was not yet verified at this step. |
 | 2026-10-13 | Phase 1 browser probe | Standalone commit `e3cfcd3`: Chromium 154.0.8037.57 on Linux passed paired capabilities, incorrect pairing, streamed fake evaluations, competing tabs, abort/tab-close cleanup, and permission denial from the deployed HTTPS analysis page. Existing COOP/COEP and SharedArrayBuffer remain available; no header changes. Browser-engine search itself is not yet tested. Firefox 155 needs manual Allow; Linux WebKit 26.6 rejects HTTP loopback. Edge/Safari remain unverified. |
 | 2026-10-13 | Phase 1 protocol decisions | Standalone `docs/protocol.md` defines port 9670, v1 authenticated capabilities/analysis routes, side-to-move scores, exact custom rules/history correlation, resource bounds, per-start token rotation, and one-search ownership. Full engine semantics remain phase-2/3 work. |
+| 2026-10-13 | Firefox headed transport | User supplied the successful Firefox 155.0 Linux report after choosing Allow: streaming, competing-tab rejection, abort/tab-close cleanup, and two released streams passed. Recorded verbatim in the standalone project's `docs/results/firefox-linux-2026-10-13.json`. Denial remains pending. The user authorized continuing with native engine implementation. |
 
 ## Upstream references and reuse
 
