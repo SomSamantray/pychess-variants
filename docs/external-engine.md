@@ -5,10 +5,10 @@
 Design agreed on 2026-10-13. Phase 2 is complete: the standalone project serves paired
 native UCI analysis with isolated rules admission, exact custom definitions, and
 bounded process/search cleanup. Chromium and Edge passed native HTTP streaming and
-abort/tab-close checks from the deployed HTTPS page. Phase 3 compatibility coverage
-and Pychess frontend integration are in progress. The browser engine now uses a
-search backend interface and paired external-engine controls. Broader compatibility,
-chapter/restart checks and release documentation are next.
+abort/tab-close checks from the deployed HTTPS page. Phase 3 representative compatibility coverage
+and Pychess frontend integration are complete. The browser engine now uses a
+search backend interface and paired external-engine controls. Study snapshots, bridge restarts and optional Alice support pass. Clean-install
+checks and release documentation are next.
 
 Chromium transport and permission allow/deny are verified against the deployed HTTPS
 analysis page. Firefox passed the headed check after the user allowed access; its
@@ -254,8 +254,9 @@ Keep transient external evaluations separate from saved server analysis/advice.
 - [x] Define resource bounds, token lifecycle, and multi-tab ownership/busy behaviour.
 - [x] Complete the headed Firefox permission allow check.
 - [x] Complete the real installed Edge transport and permission allow/deny checks.
-- [ ] Complete Firefox denial and a real Safari/macOS check when available;
-  decide the first-release browser matrix and any required fallback from those results.
+- [x] Decide the initial verified browser matrix: Chromium 154 and Edge 155 on Linux x86_64.
+- [ ] Follow-up outside this release: Firefox native UI/denial and real Safari/macOS
+  checks when available; evaluate a fallback before claiming Safari support.
 
 Acceptance: a supported browser receives and cancels a paired local stream without
 new Heroku infrastructure or breaking WASM analysis.
@@ -292,9 +293,9 @@ invalid or incompatible inputs fail before engine search.
 - [x] Deliver external events to existing evaluation/PV displays with request correlation.
 - [x] Make external capability independent of `variantSupportedByFSF`.
 - [x] Preserve anti-cheat, ongoing-game, Study, Practice, and concealed-content restrictions.
-- [ ] Test tree navigation, chapter/rules switches, multiple tabs, backend changes,
+- [x] Test tree navigation, chapter/rules switches, multiple tabs, backend changes,
   bridge restarts, unsupported variants, and permission denial.
-- [ ] Run required frontend gates and browser checks; use the CSS skill if styling changes.
+- [x] Run required frontend gates and browser checks; use the CSS skill if styling changes.
 
 Acceptance: users can select a local native engine and analyse safely through the
 normal single-board UI; the browser-engine path remains functional.
@@ -368,6 +369,8 @@ they do not establish runtime compatibility or complete implementation phases.
 | 2026-10-13 | Optional Alice adapter | Added optional `pyffish-alice` 0.0.3 and locally configured Alice engine/options. Startup checks the advertised variant and a legal shallow search; per-adapter capability flags reject Alice custom rules and Chess960. One owner and one native process cover ordinary/Alice switching. Rules tests cover looking-glass FEN/history correlation, transfers, castling and promotion; native HTTP verifies Black-to-move PVs and Alice → Chess → Alice switching. Edge UI passes with browser search blocked and Alice-Stockfish 1.0 plus its Legacy Alice_v1.nnue network: evaluations, PV navigation, competing ownership, cleanup, reconnect/forget, permission denial, mobile/desktop light/dark styles. All 69 standalone Python tests and 907 Node tests pass; Ruff format/lint, Pyrefly and required frontend gates pass. Bad/incomplete Alice qualification reaps processes; per-adapter resource ceilings and rejection before search are covered. Wider first-release compatibility/restart checks and packaging remain open. |
 
 | 2026-10-13 | Phase 3 compatibility acceptance | The repeatable native probe passes 14 representative cases at depth 2/MultiPV 2: Black-relative scores, Chess960 and Embassy castling, Shogi drop/promotion, Kyoto demotion, Janggi pass, ten-rank coordinates, promoted Crazyhouse captures and pockets, S-Chess gating, complete repetition history and terminal mate. Rules tests additionally normalize the extended PV tokens and reject lost pocket state. Missing variant, Chess960 or custom-definition engine options fail before `position`/`go`; a command-log regression proves repetition history is retained. Targeted rules/search tests, Ruff format/lint and Pyrefly pass. The standalone compatibility matrix links these receipts and the exact-rules/Study/Alice UI evidence; coverage remains representative rather than universal. |
+
+| 2026-10-13 | Phase 4 restart and capability acceptance | Edge passes native bridge shutdown, process release, visible connection failure, rejection of the old token after restart, and a fresh search after entering the rotated token. The negative Alice UI check pairs to an ordinary bridge but keeps analysis disabled and acquires no search. Repeatable probes and reports are committed in the standalone project; Ruff format/lint and Pyrefly pass. Earlier frontend gates, Study/tree transitions, stale-request tests, browser/WASM checks, restrictions and computed-style checks remain passing evidence. Initial verified browsers are Chromium 154 and Edge 155 on Linux x86_64; Firefox native UI/denial and Safari/macOS are explicit follow-ups outside the verified release matrix. |
 
 ## Upstream references and reuse
 
