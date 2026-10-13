@@ -12,7 +12,7 @@ unavailable to the browser analysis engine.
 | Play vs AI | Server -> fairyfishnet | An active worker capable of the requested variant | Supported when an Alice-capable worker is active |
 | Server-side game/Study analysis | Server -> fairyfishnet | An active worker capable of the requested variant | Supported when an Alice-capable worker is active |
 | Browser analysis | Browser engine worker | The loaded browser engine's advertised UCI variants | Unsupported |
-| Local native analysis | Paired loopback Python bridge | Explicit per-adapter capabilities plus page permissions | Supported with the optional Alice engine/rules adapter |
+| Local native analysis | Paired loopback Python bridge | Explicit per-adapter capabilities plus page permissions | Supported with a configured Alice native engine |
 | Computer Practice | Browser engine worker | Local-analysis capability plus Practice restrictions | Unsupported |
 | PGN legality/replay | Browser rules/replay module | The parser/replay implementation for the variant | Supported; this does **not** imply local engine search support |
 
@@ -90,5 +90,5 @@ supports fixed Alice rules, compact looking-glass FEN and coordinate move tokens
 Alice Chess960 and custom rules are unavailable. Page/Study/anti-cheat restrictions
 still apply, and Practice retains its browser engine ownership.
 
-See [the implementation plan](external-engine.md) for the local application,
-protocol and verification records.
+See [the integration reference](external-engine.md) for frontend ownership and
+links to the local application design, protocol and compatibility documentation.
