@@ -2,13 +2,12 @@
 
 ## Status and tracking
 
-Design agreed on 2026-10-13. Phase 2 is complete: the standalone project serves paired
-native UCI analysis with isolated rules admission, exact custom definitions, and
-bounded process/search cleanup. Chromium and Edge passed native HTTP streaming and
-abort/tab-close checks from the deployed HTTPS page. Phase 3 representative compatibility coverage
-and Pychess frontend integration are complete. The browser engine now uses a
-search backend interface and paired external-engine controls. Study snapshots, bridge restarts and optional Alice support pass. Clean-install
-checks and release documentation are next.
+Design agreed on 2026-10-13. Phases 0–5 and the requested optional Alice adapter
+are complete for the local Linux preview. The standalone app serves paired native
+analysis with isolated rules validation, exact custom definitions and bounded
+cleanup. Pychess provides source selection, pairing and the existing score/PV displays.
+Study snapshots, bridge restarts, Alice and clean installation checks pass.
+Publication and website deployment remain separate authorized actions.
 
 Chromium transport and permission allow/deny are verified against the deployed HTTPS
 analysis page. Firefox passed the headed check after the user allowed access; its
@@ -70,7 +69,7 @@ or a queue routing jobs across machines. Start with one engine process and seria
 searches. Define explicit ownership for simultaneous tabs rather than letting them
 silently replace each other's work.
 
-Proposed package layout, to be created during implementation:
+Implemented package layout (additional helpers split configuration, access and native rules):
 
 ```text
 src/pychess_external_engine/
@@ -302,11 +301,11 @@ normal single-board UI; the browser-engine path remains functional.
 
 ### Phase 5: packaging and first release
 
-- [ ] Document installation, supported Python/OS/browser versions, pairing, engine
+- [x] Document installation, supported Python/OS/browser versions, pairing, engine
   configuration, custom rules, networks, resource limits, and troubleshooting.
-- [ ] Verify installation in clean environments on the supported operating systems.
+- [x] Verify installation in clean environments on the supported operating systems (Linux x86_64).
 - [x] Publish a supported variant/engine matrix based on completed checks (standalone `docs/compatibility.md`).
-- [ ] Complete release checks in both repositories and record versions/commit references.
+- [x] Complete release checks in both repositories and record versions/commit references.
 
 Acceptance: another user can install, pair, analyse, and stop the application using
 only the published instructions. Publishing/release is a separate authorized action.
@@ -371,6 +370,8 @@ they do not establish runtime compatibility or complete implementation phases.
 | 2026-10-13 | Phase 3 compatibility acceptance | The repeatable native probe passes 14 representative cases at depth 2/MultiPV 2: Black-relative scores, Chess960 and Embassy castling, Shogi drop/promotion, Kyoto demotion, Janggi pass, ten-rank coordinates, promoted Crazyhouse captures and pockets, S-Chess gating, complete repetition history and terminal mate. Rules tests additionally normalize the extended PV tokens and reject lost pocket state. Missing variant, Chess960 or custom-definition engine options fail before `position`/`go`; a command-log regression proves repetition history is retained. Targeted rules/search tests, Ruff format/lint and Pyrefly pass. The standalone compatibility matrix links these receipts and the exact-rules/Study/Alice UI evidence; coverage remains representative rather than universal. |
 
 | 2026-10-13 | Phase 4 restart and capability acceptance | Edge passes native bridge shutdown, process release, visible connection failure, rejection of the old token after restart, and a fresh search after entering the rotated token. The negative Alice UI check pairs to an ordinary bridge but keeps analysis disabled and acquires no search. Repeatable probes and reports are committed in the standalone project; Ruff format/lint and Pyrefly pass. Earlier frontend gates, Study/tree transitions, stale-request tests, browser/WASM checks, restrictions and computed-style checks remain passing evidence. Initial verified browsers are Chromium 154 and Edge 155 on Linux x86_64; Firefox native UI/denial and Safari/macOS are explicit follow-ups outside the verified release matrix. |
+
+| 2026-10-13 | Phase 5 local preview acceptance | Standalone packaging commit `04515a7` prepares version `0.1.0a1`, installation/troubleshooting instructions, license/notice in the wheel, and a Linux CI matrix. Clean wheel installs with Alice pass all 73 tests on CPython 3.11.13, 3.12.9, 3.13.13 and 3.14.1; installed-code imports, CLI help, pairing, active search and Ctrl+C subprocess release pass on each. A source install on 3.13.13 passes ordinary checks with six optional Alice tests skipped. Final artifacts include source docs/tests/probes/lockfile and no engine/network binaries; inspection proves their 12 runtime modules exactly match the clean-tested wheel. Ruff format/lint and Pyrefly pass; Markdown rendering/relative links pass. Full Pychess Node CI passes: lint, typecheck, development build, Markdown generation and 907 tests. Root implementation commits include `5c918dd13` (Study), `57d1ee386` (Alice) and `9e2c476cf` (frontend acceptance); standalone `72dabac`, `76304c6` and `b5fe753` record Alice, variants and restart checks. Publishing/deployment and unverified Firefox native UI/Safari/non-Linux support remain separate follow-ups. |
 
 ## Upstream references and reuse
 
