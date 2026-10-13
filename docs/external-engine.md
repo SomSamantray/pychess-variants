@@ -6,7 +6,8 @@ Design agreed on 2026-10-13. Phase 2 is complete: the standalone project serves 
 native UCI analysis with isolated rules admission, exact custom definitions, and
 bounded process/search cleanup. Chromium and Edge passed native HTTP streaming and
 abort/tab-close checks from the deployed HTTPS page. Phase 3 compatibility coverage
-and Pychess frontend integration are next.
+and Pychess frontend integration are in progress. The browser engine now uses a
+search backend interface; external connection controls are next.
 
 Chromium transport and permission allow/deny are verified against the deployed HTTPS
 analysis page. Firefox passed the headed check after the user allowed access; its
@@ -285,7 +286,7 @@ invalid or incompatible inputs fail before engine search.
 
 ### Phase 4: Pychess frontend integration
 
-- [ ] Introduce the search backend interface while retaining browser-engine behaviour.
+- [x] Introduce the search backend interface while retaining browser-engine behaviour.
 - [ ] Add paired local connection, engine selection, disconnect/forget, and status UI.
 - [ ] Deliver external events to existing evaluation/PV displays with request correlation.
 - [ ] Make external capability independent of `variantSupportedByFSF`.
@@ -353,6 +354,7 @@ they do not establish runtime compatibility or complete implementation phases.
 | 2026-10-13 | Phase 3 isolated rules admission | 49 tests pass on Python 3.13.13, including the native search smoke tests. One rules subprocess per search bounds registration lifetime and isolates native faults. Exact hashes, inherited snapshots, geometry/material guards, legal history/PV prefixes, mandatory pocket promotion state, optional chess promotion markers, Chess960, capturable en passant, Shogi promotions, ten-rank coordinates and S-Chess gating are covered. Ruff format/lint and Pyrefly pass. Native acceptance/loading of exact custom definitions and the HTTP binding remain open. |
 | 2026-10-13 | Phase 3 native custom rules | 53 tests pass, including exact definitions overriding a conflicting local INI, hash-change process replacement, same-hash reuse, inherited historical snapshots and recovery after rejection. Native diagnostic checking has bounded time/output and requires explicit acceptance; the pinned pyffish rule-name schema rejects names its parser would silently ignore. Original UTF-8 bytes are loaded before rediscovery. Ruff format/lint and Pyrefly pass. Engine-alias resolution, wider variant coverage and HTTP/frontend integration remain open. |
 | 2026-10-13 | Phase 2 native HTTP acceptance | The installed CLI now starts the local API. 63 tests pass, including real HTTP searches for Chess, Shogi, Xiangqi and Grand Chess, invalid-position rejection before search, competing ownership, silent/hung-engine disconnection, crash recovery, shutdown and output-flood cleanup. Ruff format/lint and Pyrefly pass. Chromium 154 and Edge 155 passed native streaming, competing tabs, abort/tab-close cleanup and permission denial from the deployed HTTPS page; reports are recorded in the standalone docs. Frontend selection/display integration is not yet implemented. |
+| 2026-10-13 | Phase 4 browser backend interface | Added start/stop/destroy, capabilities/status and evaluation delivery interfaces; adapted the existing browser UCI path with its stop/readiness barrier, NNUE options, history and permission gates. All 888 Node tests pass; lint, typecheck, Markdown generation and development build pass. A local Chromium check with a mock database verifies real WASM PV output, PV-click navigation/restart, toggle stop and retained cross-origin isolation. External pairing/source UI remains next. |
 
 ## Upstream references and reuse
 

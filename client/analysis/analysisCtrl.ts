@@ -43,6 +43,8 @@ import { animatePassMove } from '../passMove';
 import { mergeServerAdvice, renderFullTreePgnMoveText, renderNodeAnnotations } from './analysisTree';
 import { AnalysisTreeController } from './analysisTreeCtrl';
 import { analysisContext, type AnalysisContext } from './analysisContext';
+import { BrowserSearchBackend } from './browserSearchBackend';
+import type { AnalysisSearchBackend } from './searchBackend';
 import type {
     AnalysisExtension,
     AnalysisEvaluationDelivery,
@@ -124,8 +126,8 @@ export class AnalysisController extends GameController {
     private readonly onKeyboardHelpShortcutKeyDown: (event: KeyboardEvent) => void;
     private readonly onKeyboardHelpKeyDown: (event: KeyboardEvent) => void;
     private readonly pvHoverPreview: PvHoverPreview;
-    private awaitingStopReadyok: boolean;
-    private pendingGoAfterStopReadyok: boolean;
+    private readonly browserSearch: BrowserSearchBackend;
+    private searchBackend: AnalysisSearchBackend;
     private fsfOriginalPrompt?: typeof window.prompt;
     private fsfInputQueue: string[];
     private loadedNnueFilename?: string;
@@ -216,8 +218,21 @@ export class AnalysisController extends GameController {
         this.importedBy = '';
         this.lastBroadcastLocalAnalysisFen = undefined;
         this.keyboardHelpOpen = false;
-        this.awaitingStopReadyok = false;
-        this.pendingGoAfterStopReadyok = false;
+        this.browserSearch = new BrowserSearchBackend({
+            postMessage: command => this.fsfPostMessage(command),
+            capabilities: () => ({
+                available: this.localEngine && this.isEngineReady,
+                supportsVariant: this.variantSupportedByFSF,
+            }),
+            canSearch: () =>
+                !this.destroyed &&
+                this.localAnalysis &&
+                !this.ongoing &&
+                !this.isLocalAnalysisBlockedByAntiCheat() &&
+                this.isLocalAnalysisAllowedByExtension(),
+            onEvaluation: ceval => this.deliverLocalEvaluation(ceval),
+        });
+        this.searchBackend = this.browserSearch;
         this.fsfInputQueue = [];
         this.onKeyboardHelpShortcutKeyDown = (event: KeyboardEvent) => {
             if (this.keyboardHelpOpen || !isKeyboardHelpShortcut(event)) return;
@@ -415,7 +430,7 @@ export class AnalysisController extends GameController {
     override destroy(): void {
         this.cancelAnalysisSession();
         this.analysisExtension?.onDestroy?.();
-        this.engineStop();
+        this.searchBackend.destroy();
         this.destroyed = true;
         this.restoreFsfPrompt();
         window.removeEventListener('storage', this.onAntiCheatStorage);
@@ -1144,14 +1159,9 @@ export class AnalysisController extends GameController {
 
         if (line.includes('readyok')) {
             this.isEngineReady = true;
-            if (this.awaitingStopReadyok) {
-                this.awaitingStopReadyok = false;
-                if (this.pendingGoAfterStopReadyok && this.localAnalysis) {
-                    this.pendingGoAfterStopReadyok = false;
-                    this.engineGo();
-                }
-            }
+            this.browserSearch.onReady();
         }
+        if (line.startsWith('bestmove')) this.browserSearch.onCompleted();
 
         if (line.startsWith('Fairy-Stockfish')) {
             this.loadVariantsIntoFsfEngine();
@@ -1171,7 +1181,7 @@ export class AnalysisController extends GameController {
 
         this.refreshLocalAnalysisAvailabilityForAntiCheat();
 
-        if (!this.localAnalysis || !this.isEngineReady || this.awaitingStopReadyok) return;
+        if (!this.browserSearch.canDeliverEvaluation) return;
 
         const matches = line.match(EVAL_REGEX);
         if (!matches) {
@@ -1208,7 +1218,10 @@ export class AnalysisController extends GameController {
         } else {
             score = { cp: povEv };
         }
-        const knps = nodes / elapsedMs;
+        this.browserSearch.deliver({ d: depth, multipv: multiPv, p: moves, s: score, k: nodes / elapsedMs });
+    };
+
+    private deliverLocalEvaluation(ceval: Ceval): void {
         if (this.lastBroadcastLocalAnalysisFen !== this.fullfen) {
             publishCevalPosition(buildCevalPositionPayload(this.variant.name, this.chess960, this.fullfen));
             this.lastBroadcastLocalAnalysisFen = this.fullfen;
@@ -1217,10 +1230,10 @@ export class AnalysisController extends GameController {
             type: 'local-analysis',
             ply: this.ply,
             color: this.turnColor.slice(0, 1),
-            ceval: { d: depth, multipv: multiPv, p: moves, s: score, k: knps },
+            ceval,
         };
         this.onMsgAnalysis(msg);
-    };
+    }
 
     onMoreDepth = () => {
         this.maxDepth = 99;
@@ -1409,55 +1422,28 @@ export class AnalysisController extends GameController {
 
     /** True when extension-owned bounded searches may safely take over the shared engine. */
     isPracticeEngineIdle(): boolean {
-        return !this.awaitingStopReadyok && !this.pendingGoAfterStopReadyok;
+        return this.browserSearch.idle;
     }
 
     engineStop = () => {
-        // Keep the toggle enabled, but still synchronize restart sequencing.
-        // We wait for the matching `readyok` before sending the next `position/go`
-        // so stale PV output from the previous position does not flood the UI.
-        this.awaitingStopReadyok = true;
-        this.pendingGoAfterStopReadyok = false;
-        this.fsfPostMessage('stop');
-        this.fsfPostMessage('isready');
+        this.searchBackend.stop();
     };
 
     engineGo = () => {
-        if (!this.variantSupportedByFSF) return;
-        if (this.awaitingStopReadyok) {
-            this.pendingGoAfterStopReadyok = true;
-            return;
-        }
-        this.pendingGoAfterStopReadyok = false;
         this.lastBroadcastLocalAnalysisFen = undefined;
-
-        // A Study keeps the engine alive while switching chapters and variants.
-        this.fsfPostMessage('setoption name UCI_Variant value ' + this.engineVariant);
-        this.fsfPostMessage('setoption name UCI_Chess960 value ' + this.chess960);
-        if (this.evalFile === '' || !this.nnueOk || !this.nnue) {
-            this.fsfPostMessage('setoption name Use NNUE value false');
-        } else {
-            this.fsfPostMessage('setoption name Use NNUE value true');
-            this.fsfPostMessage('setoption name EvalFile value ' + this.evalFile);
-        }
-
-        this.fsfPostMessage('setoption name Hash value ' + this.hash);
-
-        this.fsfPostMessage('setoption name Threads value ' + this.threads);
-
-        this.fsfPostMessage('setoption name MultiPV value ' + this.multipv);
-
-        let position: string = 'position fen ' + this.fullfen;
-        if (this.UCImovelist.length > 0) {
-            position = 'position fen ' + this.steps[0].fen + ' moves ' + this.UCImovelist.join(' ');
-        }
-        this.fsfPostMessage(position);
-
-        if (this.maxDepth >= 99) {
-            this.fsfPostMessage('go depth 99');
-        } else {
-            this.fsfPostMessage('go movetime 90000 depth ' + this.maxDepth);
-        }
+        this.searchBackend.start({
+            variant: this.variant.name,
+            engineVariant: this.engineVariant,
+            chess960: this.chess960,
+            initialFen: this.steps[0]?.fen ?? this.fullfen,
+            currentFen: this.fullfen,
+            moves: [...this.UCImovelist],
+            threads: this.threads,
+            hash: this.hash,
+            multiPv: this.multipv,
+            maxDepth: this.maxDepth,
+            nnue: { file: this.evalFile, enabled: this.nnueOk && this.nnue },
+        });
     };
 
     fsfPostMessage(msg: string, debug = true) {
