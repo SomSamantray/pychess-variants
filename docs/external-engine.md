@@ -2,10 +2,11 @@
 
 ## Status and tracking
 
-Design agreed on 2026-10-13. Phase 2 is in progress: the standalone project has a
-paired loopback transport prototype and a packaged, tested UCI search controller.
-Isolated rules admission and exact native rules loading are implemented; the HTTP search binding is next. Pychess
-frontend integration has not started.
+Design agreed on 2026-10-13. Phase 2 is complete: the standalone project serves paired
+native UCI analysis with isolated rules admission, exact custom definitions, and
+bounded process/search cleanup. Chromium and Edge passed native HTTP streaming and
+abort/tab-close checks from the deployed HTTPS page. Phase 3 compatibility coverage
+and Pychess frontend integration are next.
 
 Chromium transport and permission allow/deny are verified against the deployed HTTPS
 analysis page. Firefox passed the headed check after the user allowed access; its
@@ -264,7 +265,7 @@ new Heroku infrastructure or breaking WASM analysis.
 - [x] Implement serialized searches, robust UCI parsing, MultiPV, and streaming events.
 - [x] Handle controller stop/drain sequencing, deadlines, crashes, and idle shutdown.
 - [x] Add fake-engine tests for lifecycle races and a real Fairy-Stockfish smoke test.
-- [ ] Bind the native controller to paired HTTP with production rules admission and
+- [x] Bind the native controller to paired HTTP with production rules admission and
   verify actual HTTP disconnection/tab-close cleanup before accepting phase 2.
 
 Acceptance: a paired client can search, cancel, and replace a position; late output
@@ -351,6 +352,7 @@ they do not establish runtime compatibility or complete implementation phases.
 | 2026-10-13 | Phase 2 search controller | 35 tests pass, including real depth-2 MultiPV-2 searches for Chess, Shogi, Xiangqi, and Grand Chess with legal best moves/PV prefixes. Request identities, partial/bounded output, delayed stop output, hung-stop process replacement, cancellation, competing ownership, terminal handling, wall-clock limits, and idle-close races are covered. Ruff format/lint and Pyrefly pass. Controller requires a rules backend; the native HTTP binding awaits production rules admission. |
 | 2026-10-13 | Phase 3 isolated rules admission | 49 tests pass on Python 3.13.13, including the native search smoke tests. One rules subprocess per search bounds registration lifetime and isolates native faults. Exact hashes, inherited snapshots, geometry/material guards, legal history/PV prefixes, mandatory pocket promotion state, optional chess promotion markers, Chess960, capturable en passant, Shogi promotions, ten-rank coordinates and S-Chess gating are covered. Ruff format/lint and Pyrefly pass. Native acceptance/loading of exact custom definitions and the HTTP binding remain open. |
 | 2026-10-13 | Phase 3 native custom rules | 53 tests pass, including exact definitions overriding a conflicting local INI, hash-change process replacement, same-hash reuse, inherited historical snapshots and recovery after rejection. Native diagnostic checking has bounded time/output and requires explicit acceptance; the pinned pyffish rule-name schema rejects names its parser would silently ignore. Original UTF-8 bytes are loaded before rediscovery. Ruff format/lint and Pyrefly pass. Engine-alias resolution, wider variant coverage and HTTP/frontend integration remain open. |
+| 2026-10-13 | Phase 2 native HTTP acceptance | The installed CLI now starts the local API. 63 tests pass, including real HTTP searches for Chess, Shogi, Xiangqi and Grand Chess, invalid-position rejection before search, competing ownership, silent/hung-engine disconnection, crash recovery, shutdown and output-flood cleanup. Ruff format/lint and Pyrefly pass. Chromium 154 and Edge 155 passed native streaming, competing tabs, abort/tab-close cleanup and permission denial from the deployed HTTPS page; reports are recorded in the standalone docs. Frontend selection/display integration is not yet implemented. |
 
 ## Upstream references and reuse
 
