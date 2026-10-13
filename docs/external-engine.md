@@ -4,7 +4,7 @@
 
 Design agreed on 2026-10-13. Phase 2 is in progress: the standalone project has a
 paired loopback transport prototype and a packaged, tested UCI search controller.
-Isolated rules admission is implemented; exact native rules loading and the HTTP search binding are next. Pychess
+Isolated rules admission and exact native rules loading are implemented; the HTTP search binding is next. Pychess
 frontend integration has not started.
 
 Chromium transport and permission allow/deny are verified against the deployed HTTPS
@@ -273,11 +273,11 @@ never becomes the next search's result, and engine failure releases resources.
 ### Phase 3: variant rules and exact custom definitions
 
 - [x] Add `pyffish` position/history/PV validation with native admission bounds.
-- [ ] Load site/custom definitions and inherited bases before discovering engine variants.
+- [x] Load site/custom definitions and inherited bases before discovering engine variants.
 - [ ] Verify rules hashes, Study snapshots, Chess960, and resolved engine aliases.
 - [ ] Test extended ranks, drops, promotions/demotions, gating/compound moves, repetition,
   terminal positions, black-to-move scores, and unsupported-engine combinations.
-- [ ] Define rules-worker isolation/lifetime and explicit configuration mismatch errors.
+- [x] Define rules-worker isolation/lifetime and explicit configuration mismatch errors.
 
 Acceptance: representative single-board variants use matching rules throughout;
 invalid or incompatible inputs fail before engine search.
@@ -350,6 +350,7 @@ they do not establish runtime compatibility or complete implementation phases.
 | 2026-10-13 | Phase 2 package/discovery | Added package metadata and lockfile, local-only engine configuration, AGPL license/attribution, discovery CLI, and subprocess cleanup. 20 unit tests pass on Python 3.13.13; Ruff format/lint and Pyrefly pass. Real Fairy-Stockfish `051026 LB` discovery loaded the site INI before re-advertising variants, including Orda. Streamed search is not yet implemented. |
 | 2026-10-13 | Phase 2 search controller | 35 tests pass, including real depth-2 MultiPV-2 searches for Chess, Shogi, Xiangqi, and Grand Chess with legal best moves/PV prefixes. Request identities, partial/bounded output, delayed stop output, hung-stop process replacement, cancellation, competing ownership, terminal handling, wall-clock limits, and idle-close races are covered. Ruff format/lint and Pyrefly pass. Controller requires a rules backend; the native HTTP binding awaits production rules admission. |
 | 2026-10-13 | Phase 3 isolated rules admission | 49 tests pass on Python 3.13.13, including the native search smoke tests. One rules subprocess per search bounds registration lifetime and isolates native faults. Exact hashes, inherited snapshots, geometry/material guards, legal history/PV prefixes, mandatory pocket promotion state, optional chess promotion markers, Chess960, capturable en passant, Shogi promotions, ten-rank coordinates and S-Chess gating are covered. Ruff format/lint and Pyrefly pass. Native acceptance/loading of exact custom definitions and the HTTP binding remain open. |
+| 2026-10-13 | Phase 3 native custom rules | 53 tests pass, including exact definitions overriding a conflicting local INI, hash-change process replacement, same-hash reuse, inherited historical snapshots and recovery after rejection. Native diagnostic checking has bounded time/output and requires explicit acceptance; the pinned pyffish rule-name schema rejects names its parser would silently ignore. Original UTF-8 bytes are loaded before rediscovery. Ruff format/lint and Pyrefly pass. Engine-alias resolution, wider variant coverage and HTTP/frontend integration remain open. |
 
 ## Upstream references and reuse
 
