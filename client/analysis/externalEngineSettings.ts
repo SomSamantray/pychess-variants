@@ -106,7 +106,7 @@ export class ExternalEngineSettings {
                 }),
                 h('div.external-engine-actions', [
                     h(
-                        'button.button#external-engine-connect',
+                    'button#external-engine-connect.button',
                         {
                             props: { type: 'button' },
                             on: {
@@ -118,7 +118,7 @@ export class ExternalEngineSettings {
                         _('Connect'),
                     ),
                     h(
-                        'button.button#external-engine-disconnect',
+                    'button#external-engine-disconnect.button',
                         {
                             props: { type: 'button' },
                             on: {
@@ -128,7 +128,7 @@ export class ExternalEngineSettings {
                         _('Disconnect'),
                     ),
                     h(
-                        'button.button#external-engine-forget',
+                    'button#external-engine-forget.button',
                         {
                             props: { type: 'button' },
                             on: {

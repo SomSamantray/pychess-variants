@@ -10,6 +10,12 @@ export interface ExternalCapabilities {
     maxMultiPv: number;
 }
 
+export interface ExternalSearchSession {
+    sessionId?: string;
+    lastAbort?: { address: string; until: number };
+}
+const tabSession: ExternalSearchSession = {};
+
 export class ExternalEngineError extends Error {
     constructor(readonly code: string) {
         super(code);
@@ -93,7 +99,7 @@ export class ExternalSearchBackend implements AnalysisSearchBackend {
     private token = '';
     private destroyed = false;
     private recentlyAborted = false;
-    private readonly sessionId = crypto.randomUUID();
+    private readonly sessionId: string;
     private engine?: ExternalCapabilities;
     status: SearchBackendStatus = 'disconnected';
     errorCode?: string;
@@ -101,7 +107,10 @@ export class ExternalSearchBackend implements AnalysisSearchBackend {
     constructor(
         private readonly events: SearchBackendEvents,
         private readonly fetcher: Fetch = fetch,
-    ) {}
+        private readonly session: ExternalSearchSession = tabSession,
+    ) {
+        this.sessionId = session.sessionId ??= crypto.randomUUID();
+    }
 
     get engineCapabilities(): ExternalCapabilities | undefined {
         return this.engine;
@@ -167,7 +176,10 @@ export class ExternalSearchBackend implements AnalysisSearchBackend {
     }
 
     start(search: AnalysisSearch): void {
-        const retryCleanup = this.recentlyAborted || !!this.abort;
+        const retryCleanup =
+            this.recentlyAborted ||
+            !!this.abort ||
+            (this.session.lastAbort?.address === this.address && this.session.lastAbort.until > Date.now());
         this.stop();
         this.recentlyAborted = false;
         if (!this.engine || this.destroyed || !this.events.canSearch()) return;
@@ -313,7 +325,10 @@ export class ExternalSearchBackend implements AnalysisSearchBackend {
 
     stop(): void {
         this.epoch++;
-        if (this.abort) this.recentlyAborted = this.status === 'searching';
+        if (this.abort) {
+            this.recentlyAborted = this.status === 'searching';
+            if (this.recentlyAborted) this.session.lastAbort = { address: this.address, until: Date.now() + 2000 };
+        }
         this.abort?.abort();
         this.abort = undefined;
         if (this.engine && !this.destroyed) this.updateStatus('ready');

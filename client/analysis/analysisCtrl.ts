@@ -170,7 +170,9 @@ export class AnalysisController extends GameController {
         this.analysisContext = analysisContext(model);
         this.externalAllowed =
             !model.study?.practice &&
+            model.study?.chapter.mode !== 'practice' &&
             !this.variant.twoBoards &&
+            !this.variant.hiddenInfo &&
             !['alice', 'fogofwar', 'jieqi'].includes(this.variant.name);
         this.tree = new AnalysisTreeController(this);
         this.analysisExtension = extensionFactory?.(this);

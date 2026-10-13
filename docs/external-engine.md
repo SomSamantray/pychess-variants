@@ -312,7 +312,7 @@ only the published instructions. Publishing/release is a separate authorized act
 
 ### Phase 6: optional engine and workflow expansion
 
-- [ ] Add Alice engine/rules support with explicit capability reporting.
+- [ ] Add Alice engine/rules support with explicit capability reporting (requested for this goal).
 - [ ] Adapt two-board scheduling and state correlation without claiming joint search
   from independent single-board evaluations.
 - [ ] Evaluate hidden-information analysis policies and suitable engine support.
@@ -321,6 +321,10 @@ only the published instructions. Publishing/release is a separate authorized act
 
 Acceptance: each addition has its own engine, rules, browser, and permission checks;
 partial support remains visible rather than being inferred from variant names.
+
+The user selected Alice as the only phase-6 addition for this goal. Two-board,
+hidden-information and USI/UCCI expansion remains deferred; first-release work
+continues alongside the Alice adapter.
 
 ## Verification policy
 
@@ -359,6 +363,7 @@ they do not establish runtime compatibility or complete implementation phases.
 | 2026-10-13 | Phase 4 external transport adapter | Added paired loopback capability discovery, bounded NDJSON decoding, request epochs/IDs, resource ceilings, cancellation and bounded retries for a tab's own cleanup. Minimal INI chains include inherited snapshots and UTF-8 hashes. All 896 Node tests pass; lint, typecheck and Markdown generation pass. Tests cover fragmented data, delayed legal PVs after replacement, stale pairing, custom capability before registration, permission failure without retries, competing ownership and invalid scores. The adapter is not yet exposed by the analysis UI. |
 | 2026-10-13 | Phase 4 paired external UI | Added source selection, token/address pairing, disconnect/forget, status messages, native engine naming and local-only connection preferences. Restoring a connection requires previously granted permission or a successful connection in the current page session. All 899 Node tests pass; lint, typecheck, Markdown generation and development build pass. Edge/Chromium UI checks cover native PV navigation, Black-to-move evaluation, competing tabs, tab-close cleanup, reconnect, forget and permission denial. CWDA uses its resolved profile with WASM search deliberately unavailable; Orda supplies exact custom definitions. Layout/focus and NNUE-control visibility pass at desktop/mobile sizes in light/dark themes after inspecting served stylesheets and computed styles. UI checks serve the local checkout through a synthetic HTTPS origin with a mock database; deployed-HTTPS transport was verified separately. Chapter switches, bridge restart, broader variants and release preparation remain open. |
 | 2026-10-13 | Phase 3 castling profile | Capablanca/Capahouse now resolve Embassy castling from the initial FEN, preserving the engine identity after kings move and rights disappear. This matches the server and keeps root-history replay on the correct rules. All 901 Node tests pass; lint, typecheck, Markdown generation and development build pass. An Edge native UI probe with an E-file-king Capablanca FEN confirms the resolved `embassy` key, PV navigation, ownership, reconnect/forget and permission-denial behaviour. |
+| 2026-10-13 | Study snapshot and ownership transitions | All 906 Node tests pass; lint, typecheck, Markdown generation and development build pass. Study rule chains now receive immutable client aliases, including aliased ancestors; changed parent rules change the child key. Candidate rules are prepared before mutating the active chapter. The live Edge probe switches Chess → Orda → two historical versions of one public name → earlier snapshot → Chess, retaining the tab ID and checking distinct/stable hashes plus the browser's actual pawn destinations. Practice and disabled computer permissions release native work and disable connection controls. Native action buttons now support keyboard focus and disabled semantics; corrected their Snabbdom selector order after a rendered regression exposed custom tags. Bridge restart and broader variant checks remain open. |
 
 ## Upstream references and reuse
 

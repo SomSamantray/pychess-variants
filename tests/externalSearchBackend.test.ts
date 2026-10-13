@@ -2,14 +2,22 @@ import { expect, jest, test, beforeAll } from '@jest/globals';
 import { TextEncoder, TextDecoder } from 'node:util';
 import { ReadableStream } from 'node:stream/web';
 import { createHash, webcrypto } from 'node:crypto';
-import { ExternalSearchBackend, externalAddress } from '../client/analysis/externalSearchBackend';
+import {
+    ExternalSearchBackend,
+    externalAddress,
+    type ExternalSearchSession,
+} from '../client/analysis/externalSearchBackend';
 import { externalRulesIni, hashExternalRules } from '../client/analysis/externalRules';
-import type { AnalysisSearch } from '../client/analysis/searchBackend';
+import type { AnalysisSearch, SearchBackendEvents } from '../client/analysis/searchBackend';
 
 beforeAll(() => {
     Object.assign(globalThis, { TextEncoder, TextDecoder });
     Object.defineProperty(globalThis, 'crypto', { value: webcrypto, configurable: true });
 });
+
+function testBackend(events: SearchBackendEvents, fetcher: typeof fetch, session: ExternalSearchSession = {}) {
+    return new ExternalSearchBackend(events, fetcher, session);
+}
 
 const TOKEN = 'test-pairing-token-' + 'x'.repeat(32);
 const ADDRESS = 'http://127.0.0.1:9670';
@@ -104,7 +112,7 @@ test('pairing requires production capabilities and stale pairing cannot replace 
     });
     let calls = 0;
     const fetcher = jest.fn<typeof fetch>(async () => (++calls === 1 ? first : jsonResponse(capabilities)));
-    const backend = new ExternalSearchBackend({ canSearch: () => true, onEvaluation: jest.fn() }, fetcher);
+    const backend = testBackend({ canSearch: () => true, onEvaluation: jest.fn() }, fetcher);
     const old = backend.connect(ADDRESS, TOKEN);
     await backend.connect(ADDRESS, TOKEN);
     resolveOld(jsonResponse({ ...capabilities, prototype: true }));
@@ -116,7 +124,7 @@ test('pairing requires production capabilities and stale pairing cannot replace 
     ).toBe(true);
     expect(backend.supports({ engineVariant: 'chess', chess960: false })).toBe(false);
     backend.destroy();
-    const fake = new ExternalSearchBackend({ canSearch: () => true, onEvaluation: jest.fn() }, async () =>
+    const fake = testBackend({ canSearch: () => true, onEvaluation: jest.fn() }, async () =>
         jsonResponse({ ...capabilities, prototype: true }),
     );
     await expect(fake.connect(ADDRESS, TOKEN)).rejects.toThrow('invalid_protocol');
@@ -132,7 +140,7 @@ test('fragmented events preserve scores and extended moves while dropping stale 
         body = JSON.parse(init.body as string);
         return stream.response;
     });
-    const backend = new ExternalSearchBackend({ canSearch: () => true, onEvaluation }, fetcher);
+    const backend = testBackend({ canSearch: () => true, onEvaluation }, fetcher);
     await backend.connect(ADDRESS, TOKEN);
     backend.start(search);
     await eventually(() => !!body.searchId);
@@ -175,7 +183,7 @@ test('an aborted response cannot deliver a late legal PV to its replacement', as
     const streams = [streamResponse(), streamResponse()];
     const bodies: Record<string, unknown>[] = [];
     const onEvaluation = jest.fn();
-    const backend = new ExternalSearchBackend({ canSearch: () => true, onEvaluation }, async (_url, init) => {
+    const backend = testBackend({ canSearch: () => true, onEvaluation }, async (_url, init) => {
         if (!init?.body) return jsonResponse(capabilities);
         const index = bodies.length;
         bodies.push(JSON.parse(init.body as string));
@@ -209,7 +217,7 @@ test('initial busy ownership is surfaced without retries and invalid mixed score
     const busyFetch = jest.fn<typeof fetch>(async (_url, init) =>
         init?.body ? jsonResponse({ error: { code: 'engine_busy' } }, 409) : jsonResponse(capabilities),
     );
-    const busy = new ExternalSearchBackend({ canSearch: () => true, onEvaluation }, busyFetch);
+    const busy = testBackend({ canSearch: () => true, onEvaluation }, busyFetch);
     await busy.connect(ADDRESS, TOKEN);
     busy.start(search);
     await eventually(() => busy.status === 'error');
@@ -219,7 +227,7 @@ test('initial busy ownership is surfaced without retries and invalid mixed score
 
     const stream = streamResponse();
     let identity: unknown;
-    const invalid = new ExternalSearchBackend({ canSearch: () => true, onEvaluation }, async (_url, init) => {
+    const invalid = testBackend({ canSearch: () => true, onEvaluation }, async (_url, init) => {
         if (!init?.body) return jsonResponse(capabilities);
         identity = JSON.parse(init.body as string).searchId;
         return stream.response;
@@ -248,17 +256,14 @@ test('only a replacement retries its own bounded cleanup window', async () => {
     const replacement = streamResponse();
     let searches = 0;
     let replacementId: unknown;
-    const backend = new ExternalSearchBackend(
-        { canSearch: () => true, onEvaluation: jest.fn() },
-        async (_url, init) => {
-            if (!init?.body) return jsonResponse(capabilities);
-            searches++;
-            if (searches === 1) return first.response;
-            if (searches === 2) return jsonResponse({ error: { code: 'engine_busy' } }, 409);
-            replacementId = JSON.parse(init.body as string).searchId;
-            return replacement.response;
-        },
-    );
+    const backend = testBackend({ canSearch: () => true, onEvaluation: jest.fn() }, async (_url, init) => {
+        if (!init?.body) return jsonResponse(capabilities);
+        searches++;
+        if (searches === 1) return first.response;
+        if (searches === 2) return jsonResponse({ error: { code: 'engine_busy' } }, 409);
+        replacementId = JSON.parse(init.body as string).searchId;
+        return replacement.response;
+    });
     await backend.connect(ADDRESS, TOKEN);
     backend.start(search);
     await eventually(() => first.locked());
@@ -276,14 +281,45 @@ test('permission failure is surfaced once and analysis policy blocks search requ
     const deniedFetch = jest.fn<typeof fetch>(async () => {
         throw new TypeError('Permission denied');
     });
-    const denied = new ExternalSearchBackend({ canSearch: () => true, onEvaluation: jest.fn() }, deniedFetch);
+    const denied = testBackend({ canSearch: () => true, onEvaluation: jest.fn() }, deniedFetch);
     await expect(denied.connect(ADDRESS, TOKEN)).rejects.toThrow('connection_failed');
     expect(deniedFetch).toHaveBeenCalledTimes(1);
     denied.destroy();
     const fetcher = jest.fn<typeof fetch>(async () => jsonResponse(capabilities));
-    const blocked = new ExternalSearchBackend({ canSearch: () => false, onEvaluation: jest.fn() }, fetcher);
+    const blocked = testBackend({ canSearch: () => false, onEvaluation: jest.fn() }, fetcher);
     await blocked.connect(ADDRESS, TOKEN);
     blocked.start(search);
     expect(fetcher).toHaveBeenCalledTimes(1);
     blocked.destroy();
+});
+
+test('chapter controller replacement retains tab identity and waits for its own old search cleanup', async () => {
+    const session: ExternalSearchSession = {};
+    const first = streamResponse();
+    const second = streamResponse();
+    const requests: Record<string, unknown>[] = [];
+    const fetcher = jest.fn<typeof fetch>(async (_url, init) => {
+        if (!init?.body) return jsonResponse(capabilities);
+        requests.push(JSON.parse(init.body as string));
+        if (requests.length === 1) return first.response;
+        if (requests.length === 2) return jsonResponse({ error: { code: 'engine_busy' } }, 409);
+        return second.response;
+    });
+    const events = { canSearch: () => true, onEvaluation: jest.fn() };
+    const old = testBackend(events, fetcher, session);
+    await old.connect(ADDRESS, TOKEN);
+    old.start(search);
+    await eventually(() => first.locked());
+    old.destroy();
+    first.close();
+    const replacement = testBackend(events, fetcher, session);
+    await replacement.connect(ADDRESS, TOKEN);
+    replacement.start(search);
+    await eventually(() => requests.length === 3);
+    expect(requests[2].sessionId).toBe(requests[0].sessionId);
+    expect(requests[2].searchId).not.toBe(requests[0].searchId);
+    second.write(JSON.stringify({ protocolVersion: 1, type: 'completed', searchId: requests[2].searchId }) + '\n');
+    second.close();
+    await eventually(() => replacement.status === 'ready');
+    replacement.destroy();
 });

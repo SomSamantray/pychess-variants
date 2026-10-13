@@ -2134,6 +2134,11 @@ export interface CataloguedVariantClientDocument {
 }
 
 const cataloguedVariantInis: Record<string, string> = {};
+let studyEngineRules: { variant: string; engineVariant: string; ini: string } | undefined;
+
+export function activateStudyEngineRules(rules: typeof studyEngineRules): void {
+    studyEngineRules = rules;
+}
 const cataloguedVariantBaseNames: Record<string, string> = {};
 const cataloguedVariantNames = new Set<string>();
 const favoriteCataloguedVariantNames = new Set<string>();
@@ -2143,6 +2148,7 @@ export function allVariantsIni(baseIni: string): string {
 }
 
 export function variantConfigIni(baseIni: string, variantName: string): string {
+    if (studyEngineRules?.variant === variantName) return [baseIni, studyEngineRules.ini].filter(Boolean).join('\n');
     const requiredInis: string[] = [];
     const seen = new Set<string>();
     let name = variantName;
@@ -3085,6 +3091,7 @@ export function moddedVariant(
     castling: string,
     initialFen: string = '',
 ): string {
+    if (studyEngineRules?.variant === variantName) return studyEngineRules.engineVariant;
     if (variantName === 'cwda') return cwdaEngineVariant(initialFen);
     if (!chess960 && ['capablanca', 'capahouse'].includes(variantName)) {
         // Preserve the original castling profile when replaying a game or tree.
