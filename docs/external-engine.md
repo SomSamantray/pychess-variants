@@ -3,8 +3,9 @@
 ## Status and tracking
 
 Design agreed on 2026-10-13. Phase 2 is in progress: the standalone project has a
-paired loopback transport prototype and a packaged UCI executable-discovery layer.
-Real streamed engine search and Pychess frontend integration are next.
+paired loopback transport prototype and a packaged, tested UCI search controller.
+Isolated rules admission and the native HTTP search binding are next; Pychess
+frontend integration has not started.
 
 Chromium transport and permission allow/deny are verified against the deployed HTTPS
 analysis page. Firefox passed the headed check after the user allowed access; its
@@ -260,9 +261,11 @@ new Heroku infrastructure or breaking WASM analysis.
 
 - [x] Add package metadata, discovery CLI, configuration, license/attribution, and development checks.
 - [x] Launch configured engines, discover options, and report actual capabilities.
-- [ ] Implement serialized searches, robust UCI parsing, MultiPV, and streaming events.
-- [ ] Handle stop/drain sequencing, deadlines, crashes, disconnects, and idle shutdown.
-- [ ] Add fake-engine tests for lifecycle races and a real Fairy-Stockfish smoke test.
+- [x] Implement serialized searches, robust UCI parsing, MultiPV, and streaming events.
+- [x] Handle controller stop/drain sequencing, deadlines, crashes, and idle shutdown.
+- [x] Add fake-engine tests for lifecycle races and a real Fairy-Stockfish smoke test.
+- [ ] Bind the native controller to paired HTTP with production rules admission and
+  verify actual HTTP disconnection/tab-close cleanup before accepting phase 2.
 
 Acceptance: a paired client can search, cancel, and replace a position; late output
 never becomes the next search's result, and engine failure releases resources.
@@ -345,6 +348,7 @@ they do not establish runtime compatibility or complete implementation phases.
 | 2026-10-13 | Firefox headed transport | User supplied the successful Firefox 155.0 Linux report after choosing Allow: streaming, competing-tab rejection, abort/tab-close cleanup, and two released streams passed. Recorded verbatim in the standalone project's `docs/results/firefox-linux-2026-10-13.json`. Denial remains pending. The user authorized continuing with native engine implementation. |
 | 2026-10-13 | Edge transport | Installed Microsoft Edge 155.0.4283.45 on Linux passed the same deployed-HTTPS transport and permission allow/deny checks as Chromium. Report saved in `docs/results/edge-linux-2026-10-13.json`. User confirmed Safari is unavailable on Ubuntu and authorized continuing; Safari/macOS remains outside verified coverage. |
 | 2026-10-13 | Phase 2 package/discovery | Added package metadata and lockfile, local-only engine configuration, AGPL license/attribution, discovery CLI, and subprocess cleanup. 20 unit tests pass on Python 3.13.13; Ruff format/lint and Pyrefly pass. Real Fairy-Stockfish `051026 LB` discovery loaded the site INI before re-advertising variants, including Orda. Streamed search is not yet implemented. |
+| 2026-10-13 | Phase 2 search controller | 35 tests pass, including real depth-2 MultiPV-2 searches for Chess, Shogi, Xiangqi, and Grand Chess with legal best moves/PV prefixes. Request identities, partial/bounded output, delayed stop output, hung-stop process replacement, cancellation, competing ownership, terminal handling, wall-clock limits, and idle-close races are covered. Ruff format/lint and Pyrefly pass. Controller requires a rules backend; the native HTTP binding awaits production rules admission. |
 
 ## Upstream references and reuse
 
