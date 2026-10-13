@@ -34,4 +34,5 @@ export interface AnalysisSearchBackend {
 export interface SearchBackendEvents {
     canSearch(): boolean;
     onEvaluation(ceval: Ceval): void;
+    onStatusChanged?(status: SearchBackendStatus, errorCode?: string): void;
 }

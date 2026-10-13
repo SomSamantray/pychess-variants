@@ -1,0 +1,288 @@
+import { expect, jest, test, beforeAll } from '@jest/globals';
+import { TextEncoder, TextDecoder } from 'node:util';
+import { ReadableStream } from 'node:stream/web';
+import { createHash, webcrypto } from 'node:crypto';
+import { ExternalSearchBackend, externalAddress } from '../client/analysis/externalSearchBackend';
+import { externalRulesIni, hashExternalRules } from '../client/analysis/externalRules';
+import type { AnalysisSearch } from '../client/analysis/searchBackend';
+
+beforeAll(() => {
+    Object.assign(globalThis, { TextEncoder, TextDecoder });
+    Object.defineProperty(globalThis, 'crypto', { value: webcrypto, configurable: true });
+});
+
+const TOKEN = 'test-pairing-token-' + 'x'.repeat(32);
+const ADDRESS = 'http://127.0.0.1:9670';
+const capabilities = {
+    protocolVersion: 1,
+    scorePov: 'sideToMove',
+    engine: {
+        name: 'Test engine',
+        variants: ['shogi'],
+        chess960: true,
+        customRules: true,
+        maxThreads: 2,
+        maxHash: 64,
+        maxMultiPv: 2,
+    },
+};
+const search: AnalysisSearch = {
+    variant: 'shogi',
+    engineVariant: 'shogi',
+    chess960: false,
+    initialFen: 'root',
+    currentFen: 'selected',
+    moves: ['e7e8+'],
+    threads: 8,
+    hash: 128,
+    multiPv: 5,
+    maxDepth: 18,
+};
+
+function jsonResponse(data: unknown, status = 200): Response {
+    return { ok: status === 200, status, json: async () => data } as Response;
+}
+
+function streamResponse() {
+    let controller: ReadableStreamDefaultController<Uint8Array>;
+    const stream = new ReadableStream<Uint8Array>({
+        start: c => {
+            controller = c as unknown as typeof controller;
+        },
+    });
+    return {
+        response: {
+            ok: true,
+            status: 200,
+            headers: { get: () => 'application/x-ndjson' },
+            body: stream,
+        } as unknown as Response,
+        write: (text: string) => controller.enqueue(new TextEncoder().encode(text)),
+        close: () => controller.close(),
+        locked: () => stream.locked,
+    };
+}
+
+async function eventually(predicate: () => boolean) {
+    for (let i = 0; i < 100; i++) {
+        if (predicate()) return;
+        await new Promise(resolve => setTimeout(resolve, 5));
+    }
+    throw new Error('Expected asynchronous backend state');
+}
+
+test('connection addresses stay on IPv4 loopback and reject credentials or paths', () => {
+    expect(externalAddress(ADDRESS + '/')).toBe(ADDRESS);
+    for (const value of [
+        'https://127.0.0.1:9670',
+        'http://remote.example:9670',
+        'http://localhost:9670',
+        ADDRESS + '/path',
+        ADDRESS + '?token=x',
+        'http://user:pass@127.0.0.1:9670',
+        'http://127.0.0.1:0',
+    ])
+        expect(() => externalAddress(value)).toThrow();
+});
+
+test('minimal rules preserve snapshot inheritance, skip unrelated rules and hash exact UTF-8', async () => {
+    const ini =
+        '# Árvíztűrő\n[unrelated:chess]\n[base:chess]\ndoubleStep = false\n[studysnap_saved:base]\n[hidden:fogofwar]\n';
+    const exact = externalRulesIni(ini, 'studysnap_saved')!;
+    expect(exact).toBe('[base:chess]\ndoubleStep = false\n[studysnap_saved:base]\n');
+    expect(externalRulesIni(ini, 'shogi')).toBeUndefined();
+    const hashed = await hashExternalRules(exact + '# Árvíztűrő\n');
+    expect(hashed.sha256).toBe(createHash('sha256').update(hashed.ini).digest('hex'));
+    expect(() => externalRulesIni('[a:b]\n[b:a]\n', 'a')).toThrow();
+    expect(() => externalRulesIni('[a:chess]\n[a:chess]\n', 'a')).toThrow();
+});
+
+test('pairing requires production capabilities and stale pairing cannot replace a new connection', async () => {
+    let resolveOld: (response: Response) => void = () => {};
+    const first = new Promise<Response>(resolve => {
+        resolveOld = resolve;
+    });
+    let calls = 0;
+    const fetcher = jest.fn<typeof fetch>(async () => (++calls === 1 ? first : jsonResponse(capabilities)));
+    const backend = new ExternalSearchBackend({ canSearch: () => true, onEvaluation: jest.fn() }, fetcher);
+    const old = backend.connect(ADDRESS, TOKEN);
+    await backend.connect(ADDRESS, TOKEN);
+    resolveOld(jsonResponse({ ...capabilities, prototype: true }));
+    await old;
+    expect(backend.status).toBe('ready');
+    expect(backend.engineCapabilities?.name).toBe('Test engine');
+    expect(
+        backend.supports({ engineVariant: 'new-snapshot', chess960: false, rules: { ini: 'rules', sha256: 'hash' } }),
+    ).toBe(true);
+    expect(backend.supports({ engineVariant: 'chess', chess960: false })).toBe(false);
+    backend.destroy();
+    const fake = new ExternalSearchBackend({ canSearch: () => true, onEvaluation: jest.fn() }, async () =>
+        jsonResponse({ ...capabilities, prototype: true }),
+    );
+    await expect(fake.connect(ADDRESS, TOKEN)).rejects.toThrow('invalid_protocol');
+    fake.destroy();
+});
+
+test('fragmented events preserve scores and extended moves while dropping stale search IDs', async () => {
+    const stream = streamResponse();
+    let body: Record<string, unknown> = {};
+    const onEvaluation = jest.fn();
+    const fetcher = jest.fn<typeof fetch>(async (_url, init) => {
+        if (!init?.body) return jsonResponse(capabilities);
+        body = JSON.parse(init.body as string);
+        return stream.response;
+    });
+    const backend = new ExternalSearchBackend({ canSearch: () => true, onEvaluation }, fetcher);
+    await backend.connect(ADDRESS, TOKEN);
+    backend.start(search);
+    await eventually(() => !!body.searchId);
+    const event = {
+        protocolVersion: 1,
+        type: 'evaluation',
+        searchId: body.searchId,
+        nodes: 1000,
+        millis: 50,
+        pvs: [{ depth: 5, multiPv: 1, cp: -32, moves: ['e7e8+', 'P@a10'] }],
+    };
+    stream.write(JSON.stringify({ ...event, searchId: 'old-search' }) + '\n');
+    const line = JSON.stringify(event) + '\n';
+    stream.write(line.slice(0, 20));
+    stream.write(line.slice(20));
+    stream.write(JSON.stringify({ protocolVersion: 1, searchId: body.searchId, type: 'completed' }) + '\n');
+    stream.close();
+    await eventually(() => backend.status === 'ready');
+    expect(onEvaluation).toHaveBeenCalledTimes(1);
+    expect(onEvaluation).toHaveBeenCalledWith({ d: 5, multipv: 1, p: 'e7e8+ P@a10', s: { cp: -32 }, k: 20 });
+    expect(body).toMatchObject({
+        initialFen: 'root',
+        currentFen: 'selected',
+        moves: ['e7e8+'],
+        threads: 2,
+        hash: 64,
+        multiPv: 2,
+    });
+    expect(fetcher.mock.calls[1][0]).toBe(ADDRESS + '/v1/analyse');
+    expect(fetcher.mock.calls[1][1]).toMatchObject({
+        credentials: 'omit',
+        targetAddressSpace: 'loopback',
+        headers: { Authorization: 'Bearer ' + TOKEN },
+    });
+    backend.destroy();
+});
+
+test('an aborted response cannot deliver a late legal PV to its replacement', async () => {
+    const streams = [streamResponse(), streamResponse()];
+    const bodies: Record<string, unknown>[] = [];
+    const onEvaluation = jest.fn();
+    const backend = new ExternalSearchBackend({ canSearch: () => true, onEvaluation }, async (_url, init) => {
+        if (!init?.body) return jsonResponse(capabilities);
+        const index = bodies.length;
+        bodies.push(JSON.parse(init.body as string));
+        return streams[index].response;
+    });
+    await backend.connect(ADDRESS, TOKEN);
+    backend.start(search);
+    await eventually(() => bodies.length === 1);
+    await eventually(() => streams[0].locked());
+    backend.stop();
+    backend.start({ ...search, currentFen: 'replacement' });
+    await eventually(() => bodies.length === 2);
+    const event = (index: number) => ({
+        protocolVersion: 1,
+        type: 'evaluation',
+        searchId: bodies[index].searchId,
+        nodes: 10,
+        millis: 5,
+        pvs: [{ depth: 2, multiPv: 1, cp: index + 10, moves: ['e7e8+'] }],
+    });
+    streams[0].write(JSON.stringify(event(0)) + '\n');
+    streams[1].write(JSON.stringify(event(1)) + '\n');
+    await eventually(() => onEvaluation.mock.calls.length === 1);
+    expect(onEvaluation.mock.calls[0][0]).toMatchObject({ s: { cp: 11 } });
+    backend.destroy();
+    streams[1].close();
+});
+
+test('initial busy ownership is surfaced without retries and invalid mixed scores are rejected', async () => {
+    const onEvaluation = jest.fn();
+    const busyFetch = jest.fn<typeof fetch>(async (_url, init) =>
+        init?.body ? jsonResponse({ error: { code: 'engine_busy' } }, 409) : jsonResponse(capabilities),
+    );
+    const busy = new ExternalSearchBackend({ canSearch: () => true, onEvaluation }, busyFetch);
+    await busy.connect(ADDRESS, TOKEN);
+    busy.start(search);
+    await eventually(() => busy.status === 'error');
+    expect(busy.errorCode).toBe('engine_busy');
+    expect(busyFetch).toHaveBeenCalledTimes(2);
+    busy.destroy();
+
+    const stream = streamResponse();
+    let identity: unknown;
+    const invalid = new ExternalSearchBackend({ canSearch: () => true, onEvaluation }, async (_url, init) => {
+        if (!init?.body) return jsonResponse(capabilities);
+        identity = JSON.parse(init.body as string).searchId;
+        return stream.response;
+    });
+    await invalid.connect(ADDRESS, TOKEN);
+    invalid.start(search);
+    await eventually(() => !!identity);
+    stream.write(
+        JSON.stringify({
+            protocolVersion: 1,
+            type: 'evaluation',
+            searchId: identity,
+            nodes: 10,
+            millis: 5,
+            pvs: [{ depth: 2, multiPv: 1, cp: 'invalid', mate: 3, moves: ['e7e8+'] }],
+        }) + '\n',
+    );
+    await eventually(() => invalid.status === 'error');
+    expect(invalid.errorCode).toBe('invalid_protocol');
+    expect(onEvaluation).not.toHaveBeenCalled();
+    invalid.destroy();
+});
+
+test('only a replacement retries its own bounded cleanup window', async () => {
+    const first = streamResponse();
+    const replacement = streamResponse();
+    let searches = 0;
+    let replacementId: unknown;
+    const backend = new ExternalSearchBackend(
+        { canSearch: () => true, onEvaluation: jest.fn() },
+        async (_url, init) => {
+            if (!init?.body) return jsonResponse(capabilities);
+            searches++;
+            if (searches === 1) return first.response;
+            if (searches === 2) return jsonResponse({ error: { code: 'engine_busy' } }, 409);
+            replacementId = JSON.parse(init.body as string).searchId;
+            return replacement.response;
+        },
+    );
+    await backend.connect(ADDRESS, TOKEN);
+    backend.start(search);
+    await eventually(() => first.locked());
+    backend.stop();
+    first.close();
+    backend.start(search);
+    await eventually(() => searches === 3);
+    replacement.write(JSON.stringify({ protocolVersion: 1, type: 'completed', searchId: replacementId }) + '\n');
+    replacement.close();
+    await eventually(() => backend.status === 'ready');
+    backend.destroy();
+});
+
+test('permission failure is surfaced once and analysis policy blocks search requests', async () => {
+    const deniedFetch = jest.fn<typeof fetch>(async () => {
+        throw new TypeError('Permission denied');
+    });
+    const denied = new ExternalSearchBackend({ canSearch: () => true, onEvaluation: jest.fn() }, deniedFetch);
+    await expect(denied.connect(ADDRESS, TOKEN)).rejects.toThrow('connection_failed');
+    expect(deniedFetch).toHaveBeenCalledTimes(1);
+    denied.destroy();
+    const fetcher = jest.fn<typeof fetch>(async () => jsonResponse(capabilities));
+    const blocked = new ExternalSearchBackend({ canSearch: () => false, onEvaluation: jest.fn() }, fetcher);
+    await blocked.connect(ADDRESS, TOKEN);
+    blocked.start(search);
+    expect(fetcher).toHaveBeenCalledTimes(1);
+    blocked.destroy();
+});
