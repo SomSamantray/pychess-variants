@@ -2,8 +2,9 @@
 
 ## Status and tracking
 
-Design agreed on 2026-10-13. Research and the initial project workspace are complete;
-runtime implementation and browser integration have not started.
+Design agreed on 2026-10-13. Phase 1 is in progress: the standalone project has a
+paired loopback transport prototype with fake results. Native engine search and
+Pychess frontend integration have not started.
 
 The standalone Python project lives at `~/pychess-external-engine`. This document
 tracks both that application's implementation and its integration with Pychess.
@@ -233,7 +234,7 @@ Keep transient external evaluations separate from saved server analysis/advice.
 
 ### Phase 1: prove browser transport and freeze the initial protocol
 
-- [ ] Build a minimal loopback HTTP prototype with pairing and a fake result stream.
+- [x] Build a minimal loopback HTTP prototype with pairing and a fake result stream.
 - [ ] Test HTTPS-to-loopback streaming, preflight, permission grant/denial, and
   abort/disconnect under Pychess's actual response headers.
 - [ ] Record browser/OS compatibility and any required header changes or fallback.
@@ -326,6 +327,7 @@ they do not establish runtime compatibility or complete implementation phases.
 | 2026-10-13 | Native provider probe | Python provider plus Fairy-Stockfish `051026 LB`, NNUE disabled, depth 2: Shogi, Xiangqi, Grand Chess, and Orda best moves were legal according to `pyffish` 0.0.90. This is a shallow compatibility probe, not full protocol/browser/variant coverage. |
 | 2026-10-13 | Capability discovery finding | Provider queried `UCI_Variant` before setting `VariantPath`, so Orda was searchable after loading rules but absent from its cached advertisement. Fix discovery order in the new adapter. |
 | 2026-10-13 | Workspace and design | Created the separate project workspace and local-only plan. Implementation starts with the HTTPS-to-loopback prototype. |
+| 2026-10-13 | Phase 1 transport prototype | Added `tools/transport_probe.py` and 10 transport/configuration tests in the standalone project. Pairing, exact origin/host checks, CORS/PNA preflights, request limits, disconnect cleanup, and exclusive stream ownership pass. Ruff format/lint and Pyrefly pass. Browser compatibility remains unverified. |
 
 ## Upstream references and reuse
 
