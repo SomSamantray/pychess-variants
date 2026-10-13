@@ -2,6 +2,7 @@ import { h, InsertHook, VNode } from 'snabbdom';
 
 import * as cg from 'chessgroundx/types';
 import * as util from 'chessgroundx/util';
+import { read as readFen } from 'chessgroundx/fen';
 
 import { registerCataloguedPremove, unregisterCataloguedPremove } from './cataloguedPremove';
 
@@ -228,7 +229,7 @@ export const BOARD_FAMILIES: Record<string, BoardFamily> = {
 
 export const PIECE_FAMILIES: Record<string, PieceFamily> = {
     amazons: { pieceCSS: ['classic', 'arrow', 'disguised'], wallCSS: ['classic', 'arrow'] },
-    paradigm: { pieceCSS: ["paradigm0", "paradigm1", "paradigm2", "paradigm3", "disguised"] },
+    paradigm: { pieceCSS: ['paradigm0', 'paradigm1', 'paradigm2', 'paradigm3', 'disguised'] },
     ataxx: { pieceCSS: ['disguised', 'virus', 'zombie', 'cat-dog'] },
     standard: {
         pieceCSS: [
@@ -3086,6 +3087,13 @@ export function moddedVariant(
 ): string {
     if (variantName === 'cwda') return cwdaEngineVariant(initialFen);
     if (!chess960 && ['capablanca', 'capahouse'].includes(variantName)) {
+        // Preserve the original castling profile when replaying a game or tree.
+        // Current kings/rights can no longer identify it after castling.
+        const root = initialFen.split(' ');
+        if (initialFen && root.length >= 3) {
+            pieces = readFen(initialFen, { width: 10, height: 8 }).pieces;
+            castling = root[2];
+        }
         const whiteKing = pieces.get('e1');
         const blackKing = pieces.get('e8');
         const whiteCanCastle =
