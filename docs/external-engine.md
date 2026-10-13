@@ -277,8 +277,8 @@ never becomes the next search's result, and engine failure releases resources.
 
 - [x] Add `pyffish` position/history/PV validation with native admission bounds.
 - [x] Load site/custom definitions and inherited bases before discovering engine variants.
-- [ ] Verify rules hashes, Study snapshots, Chess960, and resolved engine aliases.
-- [ ] Test extended ranks, drops, promotions/demotions, gating/compound moves, repetition,
+- [x] Verify rules hashes, Study snapshots, Chess960, and resolved engine aliases.
+- [x] Test extended ranks, drops, promotions/demotions, gating/compound moves, repetition,
   terminal positions, black-to-move scores, and unsupported-engine combinations.
 - [x] Define rules-worker isolation/lifetime and explicit configuration mismatch errors.
 
@@ -304,7 +304,7 @@ normal single-board UI; the browser-engine path remains functional.
 - [ ] Document installation, supported Python/OS/browser versions, pairing, engine
   configuration, custom rules, networks, resource limits, and troubleshooting.
 - [ ] Verify installation in clean environments on the supported operating systems.
-- [ ] Publish a supported variant/engine matrix based on completed checks.
+- [x] Publish a supported variant/engine matrix based on completed checks (standalone `docs/compatibility.md`).
 - [ ] Complete release checks in both repositories and record versions/commit references.
 
 Acceptance: another user can install, pair, analyse, and stop the application using
@@ -366,6 +366,8 @@ they do not establish runtime compatibility or complete implementation phases.
 | 2026-10-13 | Study snapshot and ownership transitions | All 906 Node tests pass; lint, typecheck, Markdown generation and development build pass. Study rule chains now receive immutable client aliases, including aliased ancestors; changed parent rules change the child key. Candidate rules are prepared before mutating the active chapter. The live Edge probe switches Chess → Orda → two historical versions of one public name → earlier snapshot → Chess, retaining the tab ID and checking distinct/stable hashes plus the browser's actual pawn destinations. Practice and disabled computer permissions release native work and disable connection controls. Native action buttons now support keyboard focus and disabled semantics; corrected their Snabbdom selector order after a rendered regression exposed custom tags. Bridge restart and broader variant checks remain open. |
 
 | 2026-10-13 | Optional Alice adapter | Added optional `pyffish-alice` 0.0.3 and locally configured Alice engine/options. Startup checks the advertised variant and a legal shallow search; per-adapter capability flags reject Alice custom rules and Chess960. One owner and one native process cover ordinary/Alice switching. Rules tests cover looking-glass FEN/history correlation, transfers, castling and promotion; native HTTP verifies Black-to-move PVs and Alice → Chess → Alice switching. Edge UI passes with browser search blocked and Alice-Stockfish 1.0 plus its Legacy Alice_v1.nnue network: evaluations, PV navigation, competing ownership, cleanup, reconnect/forget, permission denial, mobile/desktop light/dark styles. All 69 standalone Python tests and 907 Node tests pass; Ruff format/lint, Pyrefly and required frontend gates pass. Bad/incomplete Alice qualification reaps processes; per-adapter resource ceilings and rejection before search are covered. Wider first-release compatibility/restart checks and packaging remain open. |
+
+| 2026-10-13 | Phase 3 compatibility acceptance | The repeatable native probe passes 14 representative cases at depth 2/MultiPV 2: Black-relative scores, Chess960 and Embassy castling, Shogi drop/promotion, Kyoto demotion, Janggi pass, ten-rank coordinates, promoted Crazyhouse captures and pockets, S-Chess gating, complete repetition history and terminal mate. Rules tests additionally normalize the extended PV tokens and reject lost pocket state. Missing variant, Chess960 or custom-definition engine options fail before `position`/`go`; a command-log regression proves repetition history is retained. Targeted rules/search tests, Ruff format/lint and Pyrefly pass. The standalone compatibility matrix links these receipts and the exact-rules/Study/Alice UI evidence; coverage remains representative rather than universal. |
 
 ## Upstream references and reuse
 
