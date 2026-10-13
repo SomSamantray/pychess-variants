@@ -78,7 +78,7 @@ function parseCapabilities(value: unknown): ExternalCapabilities {
         if (alice.chess960 || alice.customRules || alice.variants.length !== 1 || alice.variants[0] !== 'alice')
             throw new ExternalEngineError('invalid_protocol');
     } else if (engine.variants.includes('alice')) {
-        // A nested Alice capability has fixed rules; a top-level one needs the adapter.
+        // Standalone Alice capabilities also require the adapter's fixed rules.
         if (engine.variants.length !== 1 || engine.chess960 || engine.customRules)
             throw new ExternalEngineError('invalid_protocol');
     }
@@ -130,7 +130,10 @@ export class ExternalSearchBackend implements AnalysisSearchBackend {
     }
 
     capabilitiesFor(engineVariant: string): ExternalCapabilities | undefined {
-        return engineVariant === 'alice' ? this.engine?.adapters?.alice : this.engine;
+        const engine = this.engine;
+        if (!engine || engineVariant !== 'alice') return engine;
+        return engine.adapters?.alice ??
+            (engine.variants.length === 1 && engine.variants[0] === 'alice' ? engine : undefined);
     }
 
     get capabilities() {

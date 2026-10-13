@@ -325,7 +325,42 @@ test('chapter controller replacement retains tab identity and waits for its own 
 });
 
 
-test('Alice requires its explicit adapter and uses only its fixed rules', async () => {
+test('standalone Alice capabilities enable fixed-rule analysis and use their search limits', async () => {
+    const alice = { ...capabilities.engine, name: 'Standalone Alice engine', variants: ['alice'],
+        chess960: false, customRules: false, maxThreads: 1, maxHash: 32, maxMultiPv: 1 };
+    const stream = streamResponse();
+    let body: Record<string, unknown> = {};
+    const onEvaluation = jest.fn();
+    const backend = testBackend({ canSearch: () => true, onEvaluation }, async (_url, init) => {
+        if (!init?.body) return jsonResponse({ ...capabilities, engine: alice });
+        body = JSON.parse(init.body as string);
+        return stream.response;
+    });
+    await backend.connect(ADDRESS, TOKEN);
+    expect(backend.status).toBe('ready');
+    expect(backend.capabilitiesFor('alice')).toEqual(alice);
+    expect(backend.supports({ engineVariant: 'alice', chess960: false })).toBe(true);
+    expect(backend.supports({ engineVariant: 'alice', chess960: true })).toBe(false);
+    expect(backend.supports({ engineVariant: 'alice', chess960: false,
+        rules: { ini: '[alice:chess]', sha256: 'x' } })).toBe(false);
+    expect(backend.supports({ engineVariant: 'shogi', chess960: false })).toBe(false);
+    backend.start({ ...search, variant: 'alice', engineVariant: 'alice', moves: ['e2e4'] });
+    await eventually(() => !!body.searchId);
+    expect(body).toMatchObject({ variant: 'alice', engineVariant: 'alice',
+        threads: 1, hash: 32, multiPv: 1 });
+    stream.write(JSON.stringify({
+        protocolVersion: 1, type: 'evaluation', searchId: body.searchId,
+        nodes: 1000, millis: 50,
+        pvs: [{ depth: 5, multiPv: 1, cp: 32, moves: ['e7e5'] }],
+    }) + '\n');
+    stream.write(JSON.stringify({ protocolVersion: 1, searchId: body.searchId, type: 'completed' }) + '\n');
+    stream.close();
+    await eventually(() => backend.status === 'ready');
+    expect(onEvaluation).toHaveBeenCalledWith({ d: 5, multipv: 1, p: 'e7e5', s: { cp: 32 }, k: 20 });
+    backend.destroy();
+});
+
+test('Alice uses its explicit adapter when paired and accepts only its fixed rules', async () => {
     const events = { canSearch: () => true, onEvaluation: jest.fn() };
     const plain = testBackend(events, async () => jsonResponse(capabilities));
     await plain.connect(ADDRESS, TOKEN);
