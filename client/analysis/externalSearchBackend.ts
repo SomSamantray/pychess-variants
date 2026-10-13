@@ -133,7 +133,7 @@ export class ExternalSearchBackend implements AnalysisSearchBackend {
             targetAddressSpace: 'loopback',
             headers: { Authorization: 'Bearer ' + this.token, ...init.headers },
         };
-        return this.fetcher(this.address + path, options);
+        return this.fetcher.call(globalThis, this.address + path, options);
     }
 
     async connect(address: string, token: string): Promise<void> {
@@ -320,8 +320,12 @@ export class ExternalSearchBackend implements AnalysisSearchBackend {
     }
 
     destroy(): void {
-        this.stop();
+        this.disconnect();
         this.destroyed = true;
+    }
+
+    disconnect(): void {
+        this.stop();
         this.engine = undefined;
         this.token = '';
         this.updateStatus('disconnected');

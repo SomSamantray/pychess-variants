@@ -44,7 +44,17 @@ import { mergeServerAdvice, renderFullTreePgnMoveText, renderNodeAnnotations } f
 import { AnalysisTreeController } from './analysisTreeCtrl';
 import { analysisContext, type AnalysisContext } from './analysisContext';
 import { BrowserSearchBackend } from './browserSearchBackend';
-import type { AnalysisSearchBackend } from './searchBackend';
+import type { AnalysisSearchBackend, AnalysisSearch } from './searchBackend';
+import { ExternalSearchBackend, ExternalEngineError } from './externalSearchBackend';
+import { externalRulesIni, hashExternalRules } from './externalRules';
+import {
+    preferredEngineSource,
+    saveEngineSource,
+    storedExternalConnection,
+    rememberExternalConnection,
+    forgetExternalConnection,
+    mayRestoreExternalConnection,
+} from './externalEngineSettings';
 import type {
     AnalysisExtension,
     AnalysisEvaluationDelivery,
@@ -128,6 +138,15 @@ export class AnalysisController extends GameController {
     private readonly pvHoverPreview: PvHoverPreview;
     private readonly browserSearch: BrowserSearchBackend;
     private searchBackend: AnalysisSearchBackend;
+    engineSource: 'browser' | 'external' = 'browser';
+    private readonly externalSearch: ExternalSearchBackend;
+    private readonly externalAllowed: boolean;
+    private externalRulesText?: string;
+    private externalRulesInvalid = false;
+    private externalRulesPayload?: Promise<{ ini: string; sha256: string }>;
+    private externalFailure?: string;
+    private searchGeneration = 0;
+    private connectionGeneration = 0;
     private fsfOriginalPrompt?: typeof window.prompt;
     private fsfInputQueue: string[];
     private loadedNnueFilename?: string;
@@ -149,6 +168,10 @@ export class AnalysisController extends GameController {
             '',
         );
         this.analysisContext = analysisContext(model);
+        this.externalAllowed =
+            !model.study?.practice &&
+            !this.variant.twoBoards &&
+            !['alice', 'fogofwar', 'jieqi'].includes(this.variant.name);
         this.tree = new AnalysisTreeController(this);
         this.analysisExtension = extensionFactory?.(this);
         this.pvHoverPreview = new PvHoverPreview(this.variant);
@@ -226,13 +249,43 @@ export class AnalysisController extends GameController {
             }),
             canSearch: () =>
                 !this.destroyed &&
+                this.engineSource === 'browser' &&
                 this.localAnalysis &&
                 !this.ongoing &&
                 !this.isLocalAnalysisBlockedByAntiCheat() &&
                 this.isLocalAnalysisAllowedByExtension(),
             onEvaluation: ceval => this.deliverLocalEvaluation(ceval),
         });
-        this.searchBackend = this.browserSearch;
+        this.externalSearch = new ExternalSearchBackend({
+            canSearch: () => this.engineSource === 'external' && this.localAnalysis && this.canUseExternalEngine(),
+            onEvaluation: ceval => {
+                if (
+                    this.destroyed ||
+                    this.engineSource !== 'external' ||
+                    !this.canUseExternalEngine() ||
+                    !this.localAnalysis
+                )
+                    return;
+                if (ceval.p && !this.pvStartsLegalInCurrentPosition(ceval.p)) return;
+                this.deliverLocalEvaluation(ceval);
+            },
+            onStatusChanged: () => {
+                if (this.destroyed) return;
+                this.refreshLocalAnalysisAvailabilityForAntiCheat();
+                analysisSettings.externalEngine.refresh();
+            },
+        });
+        this.engineSource = this.externalAllowed ? preferredEngineSource() : 'browser';
+        this.searchBackend = this.engineSource === 'external' ? this.externalSearch : this.browserSearch;
+        try {
+            this.externalRulesText = externalRulesIni(
+                variantConfigIni(variantsIni, this.variant.name),
+                this.engineVariant,
+            );
+        } catch {
+            this.externalFailure = 'rules_mismatch';
+            this.externalRulesInvalid = true;
+        }
         this.fsfInputQueue = [];
         this.onKeyboardHelpShortcutKeyDown = (event: KeyboardEvent) => {
             if (this.keyboardHelpOpen || !isKeyboardHelpShortcut(event)) return;
@@ -416,6 +469,9 @@ export class AnalysisController extends GameController {
         }, 0);
 
         analysisSettings.ctrl = this;
+        analysisSettings.externalEngine.refresh();
+        this.refreshEngineLabel();
+        void this.restoreExternalEngine();
 
         Mousetrap.bind('p', () =>
             copyTextToClipboard(`${this.fullfen};variant ${this.variant.name};site ${model.home}/${this.gameId}\n`),
@@ -430,8 +486,11 @@ export class AnalysisController extends GameController {
     override destroy(): void {
         this.cancelAnalysisSession();
         this.analysisExtension?.onDestroy?.();
-        this.searchBackend.destroy();
         this.destroyed = true;
+        this.searchGeneration++;
+        this.connectionGeneration++;
+        this.browserSearch.destroy();
+        this.externalSearch.destroy();
         this.restoreFsfPrompt();
         window.removeEventListener('storage', this.onAntiCheatStorage);
         window.removeEventListener('beforeunload', this.onEngineBoardUnload);
@@ -734,6 +793,129 @@ export class AnalysisController extends GameController {
         return this.analysisExtension?.allowComputerSearch?.() !== false;
     }
 
+    canUseExternalEngine(): boolean {
+        return (
+            !this.destroyed &&
+            this.externalAllowed &&
+            this.analysisContext.capabilities.engineTools &&
+            this.analysisContext.capabilities.localAnalysisAllowed &&
+            !this.isLocalAnalysisBlockedByAntiCheat() &&
+            this.isLocalAnalysisAllowedByExtension()
+        );
+    }
+
+    isSelectedEngineReady(): boolean {
+        if (this.engineSource === 'external') {
+            return (
+                this.canUseExternalEngine() &&
+                !this.externalRulesInvalid &&
+                this.externalSearch.supports({
+                    engineVariant: this.engineVariant,
+                    chess960: this.chess960,
+                    rules: this.externalRulesText ? { ini: this.externalRulesText, sha256: '' } : undefined,
+                })
+            );
+        }
+        return this.localEngine && this.isEngineReady && this.variantSupportedByFSF;
+    }
+
+    get externalEngineStatus() {
+        return this.externalSearch.status;
+    }
+
+    externalEngineStatusText(): string {
+        if (!this.canUseExternalEngine()) return _('External engines are unavailable on this page.');
+        const code = this.externalFailure ?? this.externalSearch.errorCode;
+        if (code === 'invalid_address') return _('Use a local address such as http://127.0.0.1:9670.');
+        if (code === 'invalid_pairing' || code === 'pairing_required')
+            return _('Enter the current pairing token from your local engine app.');
+        if (code === 'engine_busy') return _('Another tab is using the engine. Stop analysis there and try again.');
+        if (
+            [
+                'unsupported_variant',
+                'unsupported_rules',
+                'incompatible_rules',
+                'rules_mismatch',
+                'invalid_rules',
+            ].includes(code ?? '')
+        )
+            return _('Your engine and rules library cannot use this variant definition.');
+        if (code === 'connection_failed')
+            return _('Unable to connect. Start the local app and allow local network access in your browser.');
+        if (code) return _('External analysis failed. Check the local app and reconnect.');
+        if (this.externalSearch.status === 'loading') return _('Connecting…');
+        if (this.externalSearch.status === 'disconnected') return _('Disconnected');
+        if (this.engineSource === 'external' && !this.isSelectedEngineReady())
+            return _('This engine cannot analyse this variant.');
+        return this.externalSearch.engineCapabilities?.name ?? _('Disconnected');
+    }
+
+    selectEngineSource(source: 'browser' | 'external'): void {
+        if (source === 'external' && !this.canUseExternalEngine()) return;
+        this.connectionGeneration++;
+        this.engineStop();
+        // Cancel pending pairing as well as searches when changing source.
+        this.externalSearch.stop();
+        this.engineSource = source;
+        this.searchBackend = source === 'external' ? this.externalSearch : this.browserSearch;
+        saveEngineSource(source);
+        this.refreshEngineLabel();
+        this.refreshLocalAnalysisAvailabilityForAntiCheat();
+        analysisSettings.externalEngine.refresh();
+        this.pvboxIni();
+    }
+
+    async connectExternalEngine(address: string, token: string): Promise<void> {
+        if (!this.canUseExternalEngine()) return;
+        this.engineStop();
+        const generation = ++this.connectionGeneration;
+        this.engineSource = 'external';
+        this.searchBackend = this.externalSearch;
+        this.externalFailure = undefined;
+        this.refreshEngineLabel();
+        try {
+            await this.externalSearch.connect(address, token);
+            if (this.destroyed || generation !== this.connectionGeneration) return;
+            rememberExternalConnection({ address, token });
+            saveEngineSource('external');
+            this.refreshEngineLabel();
+            this.refreshLocalAnalysisAvailabilityForAntiCheat();
+            this.pvboxIni();
+        } catch (error) {
+            if (this.destroyed || generation !== this.connectionGeneration) return;
+            this.externalFailure = error instanceof ExternalEngineError ? error.code : 'connection_failed';
+        }
+        this.refreshEngineLabel();
+        analysisSettings.externalEngine.refresh();
+    }
+
+    disconnectExternalEngine(forget = false): void {
+        this.connectionGeneration++;
+        this.externalSearch.disconnect();
+        this.externalFailure = undefined;
+        if (forget) forgetExternalConnection();
+        this.selectEngineSource('browser');
+    }
+
+    private async restoreExternalEngine(): Promise<void> {
+        if (this.engineSource !== 'external' || !this.canUseExternalEngine()) return;
+        const connection = storedExternalConnection();
+        const generation = this.connectionGeneration;
+        if (!connection || !(await mayRestoreExternalConnection(connection.address))) return;
+        if (this.destroyed || generation !== this.connectionGeneration || this.engineSource !== 'external') return;
+        await this.connectExternalEngine(connection.address, connection.token);
+    }
+
+    private refreshEngineLabel(): void {
+        const label = document.getElementById('analysis-engine-name');
+        if (label)
+            label.textContent =
+                this.engineSource === 'external'
+                    ? (this.externalSearch.engineCapabilities?.name ?? _('External engine')) + ' '
+                    : 'Fairy-Stockfish 14+ ';
+        this.refreshNnueIndicator();
+    }
+
     refreshLocalAnalysisAvailabilityForAntiCheat() {
         const blocked = this.isLocalAnalysisBlockedByAntiCheat();
         const extensionAllowed = this.isLocalAnalysisAllowedByExtension();
@@ -746,10 +928,9 @@ export class AnalysisController extends GameController {
                 !this.analysisContext.capabilities.localAnalysisAllowed ||
                 blocked ||
                 !extensionAllowed ||
-                !this.localEngine ||
-                !this.isEngineReady ||
-                !this.variantSupportedByFSF;
+                !this.isSelectedEngineReady();
         }
+        analysisSettings.externalEngine.refresh();
         this.analysisExtension?.onComputerSearchAvailabilityChanged?.();
     }
 
@@ -766,7 +947,7 @@ export class AnalysisController extends GameController {
     }
 
     nnueClear() {
-        const restartAnalysis = this.localAnalysis && this.isEngineReady;
+        const restartAnalysis = this.engineSource === 'browser' && this.localAnalysis && this.isEngineReady;
         if (restartAnalysis) this.engineStop();
 
         if (this.loadedNnueFilename && window.fsf) {
@@ -786,6 +967,13 @@ export class AnalysisController extends GameController {
     refreshNnueIndicator() {
         const nnueEl = document.querySelector('.nnue') as HTMLElement | null;
         if (!nnueEl) return;
+        if (this.engineSource === 'external') {
+            patch(
+                nnueEl,
+                h('span.nnue', { props: { title: _('Engine and networks configured in the local app.') } }, 'NATIVE'),
+            );
+            return;
+        }
 
         const active = this.nnue && this.nnueOk && this.evalFile !== '';
         const title = active
@@ -818,7 +1006,7 @@ export class AnalysisController extends GameController {
             return;
         }
 
-        const restartAnalysis = this.localAnalysis && this.isEngineReady;
+        const restartAnalysis = this.engineSource === 'browser' && this.localAnalysis && this.isEngineReady;
         if (restartAnalysis) this.engineStop();
 
         if (this.loadedNnueFilename && this.loadedNnueFilename !== filename) {
@@ -1176,7 +1364,7 @@ export class AnalysisController extends GameController {
 
             window.addEventListener('beforeunload', this.onEngineBoardUnload);
 
-            if (this.localAnalysis) this.pvboxIni();
+            if (this.localAnalysis && this.engineSource === 'browser') this.pvboxIni();
         }
 
         this.refreshLocalAnalysisAvailabilityForAntiCheat();
@@ -1426,12 +1614,20 @@ export class AnalysisController extends GameController {
     }
 
     engineStop = () => {
+        this.searchGeneration++;
         this.searchBackend.stop();
     };
 
     engineGo = () => {
+        if (
+            !this.localAnalysis ||
+            this.ongoing ||
+            this.isLocalAnalysisBlockedByAntiCheat() ||
+            !this.isLocalAnalysisAllowedByExtension()
+        )
+            return;
         this.lastBroadcastLocalAnalysisFen = undefined;
-        this.searchBackend.start({
+        const search: AnalysisSearch = {
             variant: this.variant.name,
             engineVariant: this.engineVariant,
             chess960: this.chess960,
@@ -1443,7 +1639,37 @@ export class AnalysisController extends GameController {
             multiPv: this.multipv,
             maxDepth: this.maxDepth,
             nnue: { file: this.evalFile, enabled: this.nnueOk && this.nnue },
-        });
+        };
+        if (this.engineSource === 'browser') {
+            this.searchBackend.start(search);
+            return;
+        }
+        if (!this.isSelectedEngineReady()) return;
+        const generation = ++this.searchGeneration;
+        const path = this.analysisPath;
+        const session = this.analysisSessionGeneration;
+        if (this.externalRulesText && !this.externalRulesPayload)
+            this.externalRulesPayload = hashExternalRules(this.externalRulesText);
+        void (this.externalRulesPayload ?? Promise.resolve(undefined))
+            .then(rules => {
+                if (
+                    this.destroyed ||
+                    generation !== this.searchGeneration ||
+                    search.currentFen !== this.fullfen ||
+                    path !== this.analysisPath ||
+                    !this.isAnalysisSessionCurrent(session) ||
+                    this.engineSource !== 'external' ||
+                    !this.localAnalysis ||
+                    !this.canUseExternalEngine()
+                )
+                    return;
+                this.externalSearch.start({ ...search, rules });
+            })
+            .catch(() => {
+                if (generation !== this.searchGeneration || this.destroyed) return;
+                this.externalFailure = 'rules_mismatch';
+                analysisSettings.externalEngine.refresh();
+            });
     };
 
     fsfPostMessage(msg: string, debug = true) {

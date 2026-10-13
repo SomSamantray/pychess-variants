@@ -162,6 +162,7 @@ test('fragmented events preserve scores and extended moves while dropping stale 
         multiPv: 2,
     });
     expect(fetcher.mock.calls[1][0]).toBe(ADDRESS + '/v1/analyse');
+    expect(fetcher.mock.contexts[1]).toBe(globalThis);
     expect(fetcher.mock.calls[1][1]).toMatchObject({
         credentials: 'omit',
         targetAddressSpace: 'loopback',

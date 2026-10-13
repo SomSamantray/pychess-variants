@@ -7,7 +7,8 @@ native UCI analysis with isolated rules admission, exact custom definitions, and
 bounded process/search cleanup. Chromium and Edge passed native HTTP streaming and
 abort/tab-close checks from the deployed HTTPS page. Phase 3 compatibility coverage
 and Pychess frontend integration are in progress. The browser engine now uses a
-search backend interface; external connection controls are next.
+search backend interface and paired external-engine controls. Broader compatibility,
+chapter/restart checks and release documentation are next.
 
 Chromium transport and permission allow/deny are verified against the deployed HTTPS
 analysis page. Firefox passed the headed check after the user allowed access; its
@@ -287,10 +288,10 @@ invalid or incompatible inputs fail before engine search.
 ### Phase 4: Pychess frontend integration
 
 - [x] Introduce the search backend interface while retaining browser-engine behaviour.
-- [ ] Add paired local connection, engine selection, disconnect/forget, and status UI.
-- [ ] Deliver external events to existing evaluation/PV displays with request correlation.
-- [ ] Make external capability independent of `variantSupportedByFSF`.
-- [ ] Preserve anti-cheat, ongoing-game, Study, Practice, and concealed-content restrictions.
+- [x] Add paired local connection, engine selection, disconnect/forget, and status UI.
+- [x] Deliver external events to existing evaluation/PV displays with request correlation.
+- [x] Make external capability independent of `variantSupportedByFSF`.
+- [x] Preserve anti-cheat, ongoing-game, Study, Practice, and concealed-content restrictions.
 - [ ] Test tree navigation, chapter/rules switches, multiple tabs, backend changes,
   bridge restarts, unsupported variants, and permission denial.
 - [ ] Run required frontend gates and browser checks; use the CSS skill if styling changes.
@@ -356,6 +357,7 @@ they do not establish runtime compatibility or complete implementation phases.
 | 2026-10-13 | Phase 2 native HTTP acceptance | The installed CLI now starts the local API. 63 tests pass, including real HTTP searches for Chess, Shogi, Xiangqi and Grand Chess, invalid-position rejection before search, competing ownership, silent/hung-engine disconnection, crash recovery, shutdown and output-flood cleanup. Ruff format/lint and Pyrefly pass. Chromium 154 and Edge 155 passed native streaming, competing tabs, abort/tab-close cleanup and permission denial from the deployed HTTPS page; reports are recorded in the standalone docs. Frontend selection/display integration is not yet implemented. |
 | 2026-10-13 | Phase 4 browser backend interface | Added start/stop/destroy, capabilities/status and evaluation delivery interfaces; adapted the existing browser UCI path with its stop/readiness barrier, NNUE options, history and permission gates. All 888 Node tests pass; lint, typecheck, Markdown generation and development build pass. A local Chromium check with a mock database verifies real WASM PV output, PV-click navigation/restart, toggle stop and retained cross-origin isolation. External pairing/source UI remains next. |
 | 2026-10-13 | Phase 4 external transport adapter | Added paired loopback capability discovery, bounded NDJSON decoding, request epochs/IDs, resource ceilings, cancellation and bounded retries for a tab's own cleanup. Minimal INI chains include inherited snapshots and UTF-8 hashes. All 896 Node tests pass; lint, typecheck and Markdown generation pass. Tests cover fragmented data, delayed legal PVs after replacement, stale pairing, custom capability before registration, permission failure without retries, competing ownership and invalid scores. The adapter is not yet exposed by the analysis UI. |
+| 2026-10-13 | Phase 4 paired external UI | Added source selection, token/address pairing, disconnect/forget, status messages, native engine naming and local-only connection preferences. Restoring a connection requires previously granted permission or a successful connection in the current page session. All 899 Node tests pass; lint, typecheck, Markdown generation and development build pass. Edge/Chromium UI checks cover native PV navigation, Black-to-move evaluation, competing tabs, tab-close cleanup, reconnect, forget and permission denial. CWDA uses its resolved profile with WASM search deliberately unavailable; Orda supplies exact custom definitions. Layout/focus and NNUE-control visibility pass at desktop/mobile sizes in light/dark themes after inspecting served stylesheets and computed styles. UI checks serve the local checkout through a synthetic HTTPS origin with a mock database; deployed-HTTPS transport was verified separately. Chapter switches, bridge restart, broader variants and release preparation remain open. |
 
 ## Upstream references and reuse
 
