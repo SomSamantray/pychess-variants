@@ -173,7 +173,7 @@ export class AnalysisController extends GameController {
             model.study?.chapter.mode !== 'practice' &&
             !this.variant.twoBoards &&
             !this.variant.hiddenInfo &&
-            !['alice', 'fogofwar', 'jieqi'].includes(this.variant.name);
+            !['fogofwar', 'jieqi'].includes(this.variant.name);
         this.tree = new AnalysisTreeController(this);
         this.analysisExtension = extensionFactory?.(this);
         this.pvHoverPreview = new PvHoverPreview(this.variant);
@@ -849,7 +849,7 @@ export class AnalysisController extends GameController {
         if (this.externalSearch.status === 'disconnected') return _('Disconnected');
         if (this.engineSource === 'external' && !this.isSelectedEngineReady())
             return _('This engine cannot analyse this variant.');
-        return this.externalSearch.engineCapabilities?.name ?? _('Disconnected');
+        return this.externalSearch.capabilitiesFor(this.engineVariant)?.name ?? _('Disconnected');
     }
 
     selectEngineSource(source: 'browser' | 'external'): void {
@@ -913,7 +913,7 @@ export class AnalysisController extends GameController {
         if (label)
             label.textContent =
                 this.engineSource === 'external'
-                    ? (this.externalSearch.engineCapabilities?.name ?? _('External engine')) + ' '
+                    ? (this.externalSearch.capabilitiesFor(this.engineVariant)?.name ?? _('External engine')) + ' '
                     : 'Fairy-Stockfish 14+ ';
         this.refreshNnueIndicator();
     }

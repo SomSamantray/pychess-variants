@@ -8,6 +8,7 @@ export interface ExternalCapabilities {
     maxThreads: number;
     maxHash: number;
     maxMultiPv: number;
+    adapters?: { alice: ExternalCapabilities };
 }
 
 export interface ExternalSearchSession {
@@ -69,6 +70,18 @@ function parseCapabilities(value: unknown): ExternalCapabilities {
         !integer(engine.maxMultiPv, 1, 20)
     )
         throw new ExternalEngineError('invalid_protocol');
+    if (engine.adapters !== undefined) {
+        if (!record(engine.adapters) || Object.keys(engine.adapters).some(key => key !== 'alice') ||
+            !record(engine.adapters.alice) || engine.adapters.alice.adapters !== undefined)
+            throw new ExternalEngineError('invalid_protocol');
+        const alice = parseCapabilities({ ...value, engine: engine.adapters.alice });
+        if (alice.chess960 || alice.customRules || alice.variants.length !== 1 || alice.variants[0] !== 'alice')
+            throw new ExternalEngineError('invalid_protocol');
+    } else if (engine.variants.includes('alice')) {
+        // A nested Alice capability has fixed rules; a top-level one needs the adapter.
+        if (engine.variants.length !== 1 || engine.chess960 || engine.customRules)
+            throw new ExternalEngineError('invalid_protocol');
+    }
     return engine as unknown as ExternalCapabilities;
 }
 
@@ -116,15 +129,20 @@ export class ExternalSearchBackend implements AnalysisSearchBackend {
         return this.engine;
     }
 
+    capabilitiesFor(engineVariant: string): ExternalCapabilities | undefined {
+        return engineVariant === 'alice' ? this.engine?.adapters?.alice : this.engine;
+    }
+
     get capabilities() {
         return { available: !!this.engine && !this.destroyed, supportsVariant: !!this.engine };
     }
 
     supports(search: Pick<AnalysisSearch, 'engineVariant' | 'chess960' | 'rules'>): boolean {
+        const engine = this.capabilitiesFor(search.engineVariant);
         return (
-            !!this.engine &&
-            (!search.chess960 || this.engine.chess960) &&
-            (search.rules ? this.engine.customRules : this.engine.variants.includes(search.engineVariant))
+            !!engine &&
+            (!search.chess960 || engine.chess960) &&
+            (search.rules ? engine.customRules : engine.variants.includes(search.engineVariant))
         );
     }
 
@@ -200,7 +218,7 @@ export class ExternalSearchBackend implements AnalysisSearchBackend {
         abort: AbortController,
         retryCleanup: boolean,
     ): Promise<void> {
-        const engine = this.engine!;
+        const engine = this.capabilitiesFor(search.engineVariant)!;
         const searchId = crypto.randomUUID();
         const body = {
             protocolVersion: 1,

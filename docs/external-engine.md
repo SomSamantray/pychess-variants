@@ -193,7 +193,7 @@ Fishnet analysis, and Practice capability. See
 | Ordinary single-board Fairy-Stockfish variants | Initial implementation; discover actual engine and rules support |
 | Site/custom Fairy-Stockfish variants | Supply exact definitions and inheritance chains, verify hashes, then discover capabilities |
 | Chess960 and engine aliases | Resolve the same engine variant and notation conventions as Pychess |
-| Alice | Later optional Alice-capable engine and `pyffish_alice` adapter |
+| Alice | Optional configured Alice-capable engine and pinned `pyffish_alice` adapter; fixed rules, no Chess960 |
 | Two-board variants | Later integration with Pychess's board scheduling and changing pocket state |
 | Fog of War and Jieqi | Separate analysis policy and state model; no generic claim of meaningful search support |
 | Native USI/UCCI engines | Later protocol/notation adapters; UCI support alone does not cover these engines |
@@ -312,7 +312,7 @@ only the published instructions. Publishing/release is a separate authorized act
 
 ### Phase 6: optional engine and workflow expansion
 
-- [ ] Add Alice engine/rules support with explicit capability reporting (requested for this goal).
+- [x] Add Alice engine/rules support with explicit capability reporting (requested for this goal).
 - [ ] Adapt two-board scheduling and state correlation without claiming joint search
   from independent single-board evaluations.
 - [ ] Evaluate hidden-information analysis policies and suitable engine support.
@@ -364,6 +364,8 @@ they do not establish runtime compatibility or complete implementation phases.
 | 2026-10-13 | Phase 4 paired external UI | Added source selection, token/address pairing, disconnect/forget, status messages, native engine naming and local-only connection preferences. Restoring a connection requires previously granted permission or a successful connection in the current page session. All 899 Node tests pass; lint, typecheck, Markdown generation and development build pass. Edge/Chromium UI checks cover native PV navigation, Black-to-move evaluation, competing tabs, tab-close cleanup, reconnect, forget and permission denial. CWDA uses its resolved profile with WASM search deliberately unavailable; Orda supplies exact custom definitions. Layout/focus and NNUE-control visibility pass at desktop/mobile sizes in light/dark themes after inspecting served stylesheets and computed styles. UI checks serve the local checkout through a synthetic HTTPS origin with a mock database; deployed-HTTPS transport was verified separately. Chapter switches, bridge restart, broader variants and release preparation remain open. |
 | 2026-10-13 | Phase 3 castling profile | Capablanca/Capahouse now resolve Embassy castling from the initial FEN, preserving the engine identity after kings move and rights disappear. This matches the server and keeps root-history replay on the correct rules. All 901 Node tests pass; lint, typecheck, Markdown generation and development build pass. An Edge native UI probe with an E-file-king Capablanca FEN confirms the resolved `embassy` key, PV navigation, ownership, reconnect/forget and permission-denial behaviour. |
 | 2026-10-13 | Study snapshot and ownership transitions | All 906 Node tests pass; lint, typecheck, Markdown generation and development build pass. Study rule chains now receive immutable client aliases, including aliased ancestors; changed parent rules change the child key. Candidate rules are prepared before mutating the active chapter. The live Edge probe switches Chess → Orda → two historical versions of one public name → earlier snapshot → Chess, retaining the tab ID and checking distinct/stable hashes plus the browser's actual pawn destinations. Practice and disabled computer permissions release native work and disable connection controls. Native action buttons now support keyboard focus and disabled semantics; corrected their Snabbdom selector order after a rendered regression exposed custom tags. Bridge restart and broader variant checks remain open. |
+
+| 2026-10-13 | Optional Alice adapter | Added optional `pyffish-alice` 0.0.3 and locally configured Alice engine/options. Startup checks the advertised variant and a legal shallow search; per-adapter capability flags reject Alice custom rules and Chess960. One owner and one native process cover ordinary/Alice switching. Rules tests cover looking-glass FEN/history correlation, transfers, castling and promotion; native HTTP verifies Black-to-move PVs and Alice → Chess → Alice switching. Edge UI passes with browser search blocked and Alice-Stockfish 1.0 plus its Legacy Alice_v1.nnue network: evaluations, PV navigation, competing ownership, cleanup, reconnect/forget, permission denial, mobile/desktop light/dark styles. All 69 standalone Python tests and 907 Node tests pass; Ruff format/lint, Pyrefly and required frontend gates pass. Bad/incomplete Alice qualification reaps processes; per-adapter resource ceilings and rejection before search are covered. Wider first-release compatibility/restart checks and packaging remain open. |
 
 ## Upstream references and reuse
 

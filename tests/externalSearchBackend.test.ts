@@ -323,3 +323,28 @@ test('chapter controller replacement retains tab identity and waits for its own 
     await eventually(() => replacement.status === 'ready');
     replacement.destroy();
 });
+
+
+test('Alice requires its explicit adapter and uses only its fixed rules', async () => {
+    const events = { canSearch: () => true, onEvaluation: jest.fn() };
+    const plain = testBackend(events, async () => jsonResponse(capabilities));
+    await plain.connect(ADDRESS, TOKEN);
+    expect(plain.supports({ engineVariant: 'alice', chess960: false })).toBe(false);
+    plain.destroy();
+    const alice = { ...capabilities.engine, name: 'Alice-Stockfish', variants: ['alice'],
+        chess960: false, customRules: false };
+    const backend = testBackend(events, async () => jsonResponse({ ...capabilities,
+        engine: { ...capabilities.engine, variants: ['shogi', 'alice'], adapters: { alice } } }));
+    await backend.connect(ADDRESS, TOKEN);
+    expect(backend.supports({ engineVariant: 'alice', chess960: false })).toBe(true);
+    expect(backend.capabilitiesFor('alice')?.name).toBe('Alice-Stockfish');
+    expect(backend.supports({ engineVariant: 'alice', chess960: true })).toBe(false);
+    expect(backend.supports({ engineVariant: 'alice', chess960: false,
+        rules: { ini: '[alice:chess]', sha256: 'x' } })).toBe(false);
+    expect(backend.supports({ engineVariant: 'shogi', chess960: true })).toBe(true);
+    backend.destroy();
+    const invalid = testBackend(events, async () => jsonResponse({ ...capabilities,
+        engine: { ...capabilities.engine, adapters: { alice: { ...alice, customRules: true } } } }));
+    await expect(invalid.connect(ADDRESS, TOKEN)).rejects.toThrow('invalid_protocol');
+    invalid.destroy();
+});

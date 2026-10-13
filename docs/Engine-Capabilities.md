@@ -11,7 +11,8 @@ unavailable to the browser analysis engine.
 | --- | --- | --- | --- |
 | Play vs AI | Server -> fairyfishnet | An active worker capable of the requested variant | Supported when an Alice-capable worker is active |
 | Server-side game/Study analysis | Server -> fairyfishnet | An active worker capable of the requested variant | Supported when an Alice-capable worker is active |
-| Local analysis | Browser engine worker | The loaded browser engine's advertised UCI variants | Unsupported |
+| Browser analysis | Browser engine worker | The loaded browser engine's advertised UCI variants | Unsupported |
+| Local native analysis | Paired loopback Python bridge | Explicit per-adapter capabilities plus page permissions | Supported with the optional Alice engine/rules adapter |
 | Computer Practice | Browser engine worker | Local-analysis capability plus Practice restrictions | Unsupported |
 | PGN legality/replay | Browser rules/replay module | The parser/replay implementation for the variant | Supported; this does **not** imply local engine search support |
 
@@ -56,7 +57,8 @@ capabilities are currently available.
 
 Likewise, successful client-side rules handling or PGN replay is not evidence of
 browser engine-search support. Alice PGN import can use Alice-capable replay/rules
-code while Alice local analysis remains disabled.
+code while Alice browser/WASM search remains unavailable. Local native analysis uses
+its separate paired adapter and does not imply Practice support.
 
 ## Feature rules
 
@@ -77,3 +79,16 @@ When adding or changing engine support for a variant:
 Alice is the current reference case for this split: Alice-Stockfish is an optional
 fairyfishnet engine for Play-AI and server analysis, while the normal browser
 Fairy-Stockfish/WASM engine does not support Alice search.
+
+## Local native analysis
+
+The paired external engine reports ordinary capabilities and optional
+`engine.adapters.alice` capabilities separately. Alice requires its dedicated
+configured native engine and `pyffish-alice` rules validator; neither successful
+PGN replay nor the ordinary engine's custom-rules flag enables it. The adapter
+supports fixed Alice rules, compact looking-glass FEN and coordinate move tokens;
+Alice Chess960 and custom rules are unavailable. Page/Study/anti-cheat restrictions
+still apply, and Practice retains its browser engine ownership.
+
+See [the implementation plan](external-engine.md) for the local application,
+protocol and verification records.
