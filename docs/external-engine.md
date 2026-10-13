@@ -7,8 +7,10 @@ are complete for the local Linux preview. The standalone app serves paired nativ
 analysis with isolated rules validation, exact custom definitions and bounded
 cleanup. Pychess provides source selection, pairing and the existing score/PV displays.
 Study snapshots, bridge restarts, Alice and clean installation checks pass.
-The user has authorized GitHub publication and the first PyPI package release.
-Website deployment remains separate.
+The standalone package is published as `0.1.0a1` on
+[PyPI](https://pypi.org/project/pychess-external-engine/0.1.0a1/).
+Website integration is in [draft PR #2412](https://github.com/pychess/pychess-variants/pull/2412);
+website deployment remains separate.
 
 Chromium transport and permission allow/deny are verified against the deployed HTTPS
 analysis page. Firefox passed the headed check after the user allowed access; its
@@ -380,6 +382,8 @@ they do not establish runtime compatibility or complete implementation phases.
 | 2026-10-13 | Phase 5 local preview acceptance | Standalone packaging commit `04515a7` prepares version `0.1.0a1`, installation/troubleshooting instructions, license/notice in the wheel, and a Linux CI matrix. Clean wheel installs with Alice pass all 73 tests on CPython 3.11.13, 3.12.9, 3.13.13 and 3.14.1; installed-code imports, CLI help, pairing, active search and Ctrl+C subprocess release pass on each. A source install on 3.13.13 passes ordinary checks with six optional Alice tests skipped. Final artifacts include source docs/tests/probes/lockfile and no engine/network binaries; inspection proves their 12 runtime modules exactly match the clean-tested wheel. Ruff format/lint and Pyrefly pass; Markdown rendering/relative links pass. Full Pychess Node CI passes: lint, typecheck, development build, Markdown generation and 907 tests. Root implementation commits include `5c918dd13` (Study), `57d1ee386` (Alice) and `9e2c476cf` (frontend acceptance); standalone `72dabac`, `76304c6` and `b5fe753` record Alice, variants and restart checks. Publishing/deployment and unverified Firefox native UI/Safari/non-Linux support remain separate follow-ups. |
 
 | 2026-10-13 | Required Alice dependency and GitHub publication | Standalone commit `0a1e8f5` moves `pyffish-alice==0.0.3` into required dependencies, removes the Alice install extra, updates CI/tests and documents uvx. All 73 Python tests pass with both native engines, Ruff format/lint and Pyrefly pass, and wheel/source metadata pass strict Twine checks. Created the public `pychess/pychess-external-engine` repository with complete commit history. Plain-install checks and GitHub CI precede the authorized first PyPI upload. The website integration is published as a review branch; site deployment remains separate. |
+
+| 2026-10-13 | First PyPI alpha publication | Published `0.1.0a1` after the plain wheel matrix passed all 73 tests, including Alice, without skips on Python 3.11–3.14; source install on 3.13 also passes all 73 tests. GitHub CI passes all four versions. Tagged source commit `0a1e8f5` as `v0.1.0a1` and published wheel/source assets in the GitHub prerelease. PyPI reports both required rules dependencies, and uploaded file hashes exactly match the clean-tested artifacts. Website integration is public in draft PR #2412 and remains undeployed. After index propagation, the public uvx path installs both rules libraries and passes CLI help plus ordinary/Alice native discovery. The draft integration PR passes Node, Python and end-to-end CI. |
 
 ## Upstream references and reuse
 
