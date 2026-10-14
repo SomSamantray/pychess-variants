@@ -45,12 +45,14 @@ import { AnalysisTreeController } from './analysisTreeCtrl';
 import { analysisContext, type AnalysisContext } from './analysisContext';
 import { BrowserSearchBackend } from './browserSearchBackend';
 import type { AnalysisSearchBackend, AnalysisSearch } from './searchBackend';
-import { ExternalSearchBackend, ExternalEngineError } from './externalSearchBackend';
+import { ExternalSearchBackend, ExternalEngineError, externalCapabilitiesFor } from './externalSearchBackend';
 import { externalRulesIni, hashExternalRules } from './externalRules';
 import {
     preferredEngineSource,
     saveEngineSource,
-    storedExternalConnection,
+    preferredExternalEngineId,
+    registeredExternalEngines,
+    type ExternalConnection,
     rememberExternalConnection,
     forgetExternalConnection,
     mayRestoreExternalConnection,
@@ -139,6 +141,8 @@ export class AnalysisController extends GameController {
     private readonly browserSearch: BrowserSearchBackend;
     private searchBackend: AnalysisSearchBackend;
     engineSource: 'browser' | 'external' = 'browser';
+    externalEngines: ExternalConnection[] = [];
+    externalEngineId = preferredExternalEngineId();
     private readonly externalSearch: ExternalSearchBackend;
     private readonly externalAllowed: boolean;
     private externalRulesText?: string;
@@ -822,7 +826,58 @@ export class AnalysisController extends GameController {
     }
 
     get externalEngineStatus() {
-        return this.externalSearch.status;
+        return this.externalFailure ? 'error' : this.externalSearch.status;
+    }
+
+    externalEngineDisplayName(connection: ExternalConnection): string {
+        return externalCapabilitiesFor(connection.engine, this.engineVariant)?.name ?? connection.engine.name;
+    }
+
+    supportsExternalEngine(connection: ExternalConnection): boolean {
+        const engine = externalCapabilitiesFor(connection.engine, this.engineVariant);
+        return !!engine && (!this.chess960 || engine.chess960) && !this.externalRulesInvalid &&
+            (this.externalRulesText ? engine.customRules : engine.variants.includes(this.engineVariant));
+    }
+
+    async selectExternalEngine(id: string): Promise<void> {
+        if (!this.canUseExternalEngine()) return;
+        this.externalSearch.disconnect();
+        this.externalEngineId = id;
+        this.externalFailure = undefined;
+        this.selectEngineSource('external');
+        const generation = this.connectionGeneration;
+        try {
+            const engines = await registeredExternalEngines();
+            if (this.destroyed || generation !== this.connectionGeneration) return;
+            this.externalEngines = engines;
+            const connection = engines.find(engine => engine.id === id);
+            if (!connection) throw new ExternalEngineError('engine_unavailable');
+            if (!this.supportsExternalEngine(connection)) throw new ExternalEngineError('unsupported_variant');
+            await this.connectExternalEngine(connection.address, connection.token);
+        } catch (error) {
+            if (this.destroyed || generation !== this.connectionGeneration) return;
+            this.externalFailure = error instanceof ExternalEngineError ? error.code : 'connection_failed';
+            analysisSettings.externalEngine.refresh();
+        }
+    }
+
+    async removeExternalEngine(): Promise<void> {
+        const id = this.externalEngineId;
+        if (!id || !this.canUseExternalEngine()) return;
+        try {
+            const response = await fetch('/api/external-engine/' + encodeURIComponent(id) + '/delete', { method: 'POST' });
+            if (!response.ok) throw new ExternalEngineError('registration_unavailable');
+            if (this.destroyed) return;
+            this.externalEngines = this.externalEngines.filter(engine => engine.id !== id);
+            if (this.externalEngineId === id) {
+                this.disconnectExternalEngine(true);
+                this.externalEngineId = undefined;
+            }
+        } catch {
+            if (this.destroyed || this.externalEngineId !== id) return;
+            this.externalFailure = 'registration_unavailable';
+        }
+        analysisSettings.externalEngine.refresh();
     }
 
     externalEngineStatusText(): string {
@@ -830,7 +885,9 @@ export class AnalysisController extends GameController {
         const code = this.externalFailure ?? this.externalSearch.errorCode;
         if (code === 'invalid_address') return _('Use a local address such as http://127.0.0.1:9670.');
         if (code === 'invalid_pairing' || code === 'pairing_required')
-            return _('Enter the current pairing token from your local engine app.');
+            return _('Start your local engine app, then select your engine again.');
+        if (code === 'engine_unavailable') return _('Start your local engine app, then reload this page.');
+        if (code === 'registration_unavailable') return _('Unable to load your engines. Reload this page to try again.');
         if (code === 'engine_busy') return _('Another tab is using the engine. Stop analysis there and try again.');
         if (
             [
@@ -878,7 +935,8 @@ export class AnalysisController extends GameController {
         try {
             await this.externalSearch.connect(address, token);
             if (this.destroyed || generation !== this.connectionGeneration) return;
-            rememberExternalConnection({ address, token });
+            const registration = this.externalEngines.find(engine => engine.id === this.externalEngineId);
+            if (registration) rememberExternalConnection(registration);
             saveEngineSource('external');
             this.refreshEngineLabel();
             this.refreshLocalAnalysisAvailabilityForAntiCheat();
@@ -900,10 +958,27 @@ export class AnalysisController extends GameController {
     }
 
     private async restoreExternalEngine(): Promise<void> {
-        if (this.engineSource !== 'external' || !this.canUseExternalEngine()) return;
-        const connection = storedExternalConnection();
+        if (this.anon || !this.externalAllowed) return;
         const generation = this.connectionGeneration;
-        if (!connection || !(await mayRestoreExternalConnection(connection.address))) return;
+        try {
+            const engines = await registeredExternalEngines();
+            if (this.destroyed) return;
+            this.externalEngines = engines;
+            analysisSettings.externalEngine.refresh();
+        } catch {
+            return;
+        }
+        const connection = this.externalEngines.find(engine => engine.id === this.externalEngineId);
+        if (!connection) {
+            if (!this.destroyed && generation === this.connectionGeneration && this.engineSource === 'external')
+                this.selectEngineSource('browser');
+            return;
+        }
+        if (!this.canUseExternalEngine() || this.engineSource !== 'external') return;
+        if (!(await mayRestoreExternalConnection(connection.address))) {
+            if (!this.destroyed && generation === this.connectionGeneration) this.selectEngineSource('browser');
+            return;
+        }
         if (this.destroyed || generation !== this.connectionGeneration || this.engineSource !== 'external') return;
         await this.connectExternalEngine(connection.address, connection.token);
     }

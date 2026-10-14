@@ -4,7 +4,8 @@ Pychess analysis can connect directly to
 [pychess-external-engine](https://github.com/pychess/pychess-external-engine), a local
 Python app managing native UCI engines and isolated rules validation. The browser
 receives streamed evaluations from the user's computer. Pychess uses its existing
-application; no extra Heroku process, public broker or account API token is required.
+application; no extra Heroku process or public broker is required. Engine-scoped
+account tokens register connection metadata with the existing server and MongoDB.
 
 End-user installation and pairing are documented in the companion project's
 [README](https://github.com/pychess/pychess-external-engine) and
@@ -23,7 +24,8 @@ cover the application design and future enhancements.
 | [Search backend interface](../client/analysis/searchBackend.ts) | Shared start/stop/destroy and capability/status contract |
 | [Browser backend](../client/analysis/browserSearchBackend.ts) | Existing WASM UCI search and stop/readiness barrier |
 | [External backend](../client/analysis/externalSearchBackend.ts) | Paired HTTP, NDJSON decoding, request identity and cancellation |
-| [External settings](../client/analysis/externalEngineSettings.ts) | Address/token pairing, preferences, disconnect/forget and status messages |
+| [External settings](../client/analysis/externalEngineSettings.ts) | Account engine discovery, selector, preferences, removal and status messages |
+| [Registration API](../server/external_engine_api.py) | Private account registrations, renewal and removal; no analysis relay |
 | [Rule payloads](../client/analysis/externalRules.ts) | Minimal inherited INI definitions and UTF-8 hashes |
 | [Study rules](../client/study/variantRules.ts) | Immutable aliases for historical definitions and inherited bases |
 | [Variant resolution](../client/variants.ts) | Public/resolved engine names, CWDA profiles and initial Embassy castling |
@@ -35,10 +37,19 @@ the separation between browser search, native search, rules replay, Fishnet and 
 
 ## Pairing and lifecycle
 
-Users start the local app, enter its loopback address/token in analysis settings and
-grant browser local-network access when requested. Connection preferences stay in
-browser storage for the Pychess origin. Tokens are excluded from URLs, PGNs, Study
-data, account synchronization and server requests.
+Users create an engine token at `/account/engines`, configure the local app with it
+and their chosen UCI executable, then select the registered engine by name in analysis
+settings. Browser local-network permission remains required. There is no pairing
+dialog or launch link. Engines and networks remain the user's responsibility.
+
+The existing `bot_token` collection stores hashed account tokens with explicit engine
+scopes, separate from BOT gameplay permission. `external_engine` stores expiring,
+owner-only capabilities, loopback address and a separate local credential. Registration
+is renewed every 30 seconds and expires after 90 seconds without renewal. Revocation,
+removal or replacement stops the provider on its next renewal. Browser preferences
+contain only source and registration ID; credentials remain in page memory. Account
+API tokens are shown once during account setup and never enter the analysis frontend.
+No secrets enter URLs, PGNs or Study data.
 
 One tab owns the native engine. Moving between nodes, changing source, leaving a
 chapter or closing a tab aborts the previous stream. A fresh request ID prevents
@@ -46,10 +57,12 @@ stale results from updating another position even when their first move remains 
 A tab can retry within a short window for its own aborted search; another tab receives
 an engine-busy status. Stop/drain and bounded subprocess recovery happen in the bridge.
 
-Disconnect returns to browser analysis; Forget also removes saved pairing details.
-A bridge restart rotates its token and requires re-pairing. Connection restoration
+Selecting the browser engine returns to WASM analysis; Remove deletes the account
+registration. A bridge restart rotates its credential and updates its registration;
+selecting the engine again or Retry fetches current credentials. Connection restoration
 uses granted browser permission or a connection already established in the current
-page session, rather than repeatedly prompting on reload.
+page session, rather than repeatedly prompting on reload. The registration API accepts
+only loopback addresses and cannot choose native commands, files or engine options.
 
 ## Rules, moves and capabilities
 

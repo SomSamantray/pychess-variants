@@ -188,17 +188,21 @@ div.analysis-settings {
     gap: .2rem;
     min-width: 0;
 }
-.external-engine-field :is(input, select) {
+.external-engine-field select {
     box-sizing: border-box;
     width: 100%;
     min-width: 0;
+    flex: 1;
 }
-.external-engine-actions {
+.external-engine-choice {
     display: flex;
-    flex-wrap: wrap;
     gap: .4rem;
+    min-width: 0;
 }
-.external-engine-settings :is(p, small) {
+.external-engine-settings [hidden] {
+    display: none;
+}
+.external-engine-settings p {
     margin: 0;
     overflow-wrap: anywhere;
 }

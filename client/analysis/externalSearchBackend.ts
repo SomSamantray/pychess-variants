@@ -52,7 +52,7 @@ export function externalAddress(value: string): string {
     return url.origin;
 }
 
-function parseCapabilities(value: unknown): ExternalCapabilities {
+export function parseCapabilities(value: unknown): ExternalCapabilities {
     if (!record(value) || value.protocolVersion !== 1 || value.prototype || value.scorePov !== 'sideToMove')
         throw new ExternalEngineError('invalid_protocol');
     const engine = value.engine;
@@ -83,6 +83,12 @@ function parseCapabilities(value: unknown): ExternalCapabilities {
             throw new ExternalEngineError('invalid_protocol');
     }
     return engine as unknown as ExternalCapabilities;
+}
+
+export function externalCapabilitiesFor(engine: ExternalCapabilities | undefined, variant: string): ExternalCapabilities | undefined {
+    if (!engine || variant !== 'alice') return engine;
+    return engine.adapters?.alice ??
+        (engine.variants.length === 1 && engine.variants[0] === 'alice' ? engine : undefined);
 }
 
 async function checkResponse(response: Response): Promise<void> {
@@ -130,10 +136,7 @@ export class ExternalSearchBackend implements AnalysisSearchBackend {
     }
 
     capabilitiesFor(engineVariant: string): ExternalCapabilities | undefined {
-        const engine = this.engine;
-        if (!engine || engineVariant !== 'alice') return engine;
-        return engine.adapters?.alice ??
-            (engine.variants.length === 1 && engine.variants[0] === 'alice' ? engine : undefined);
+        return externalCapabilitiesFor(this.engine, engineVariant);
     }
 
     get capabilities() {

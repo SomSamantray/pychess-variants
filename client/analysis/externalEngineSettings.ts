@@ -1,28 +1,44 @@
 import { h, type VNode } from 'snabbdom';
 import { _ } from '../i18n';
 import type { AnalysisController } from './analysisCtrl';
+import { ExternalEngineError, externalAddress, parseCapabilities, type ExternalCapabilities } from './externalSearchBackend';
 
-const CONNECTION_KEY = 'externalEngineConnection';
 const SOURCE_KEY = 'analysisEngineSource';
+const ENGINE_KEY = 'analysisExternalEngineId';
 const connectedThisPage = new Set<string>();
 
+// Remove the alpha's browser-stored connection credential. Registrations now
+// belong to the signed-in account and credentials remain only in page memory.
+localStorage.removeItem('externalEngineConnection');
+
 export interface ExternalConnection {
+    id: string;
     address: string;
     token: string;
+    engine: ExternalCapabilities;
 }
 
-export function storedExternalConnection(): ExternalConnection | undefined {
-    try {
-        const value = JSON.parse(localStorage.getItem(CONNECTION_KEY) ?? 'null');
-        if (typeof value?.address === 'string' && typeof value?.token === 'string') return value;
-    } catch {
-        /* Malformed preferences can be replaced using Connect. */
-    }
-    return undefined;
+export async function registeredExternalEngines(fetcher: typeof fetch = fetch): Promise<ExternalConnection[]> {
+    const response = await fetcher.call(globalThis, '/api/external-engine', { credentials: 'same-origin', cache: 'no-store' });
+    if (response.status === 401) return [];
+    if (!response.ok) throw new ExternalEngineError('registration_unavailable');
+    const data: unknown = await response.json();
+    if (!Array.isArray(data) || data.length > 100) throw new ExternalEngineError('invalid_protocol');
+    return data.map(value => {
+        if (!value || typeof value !== 'object' || typeof value.id !== 'string' || !/^\w{8}$/.test(value.id) ||
+            typeof value.address !== 'string' || typeof value.token !== 'string' || !/^[\x21-\x7e]{32,256}$/.test(value.token))
+            throw new ExternalEngineError('invalid_protocol');
+        return { id: value.id, address: externalAddress(value.address), token: value.token,
+            engine: parseCapabilities({ protocolVersion: 1, scorePov: 'sideToMove', engine: value.engine }) };
+    });
 }
 
 export function preferredEngineSource(): 'browser' | 'external' {
     return localStorage.getItem(SOURCE_KEY) === 'external' ? 'external' : 'browser';
+}
+
+export function preferredExternalEngineId(): string | undefined {
+    return localStorage.getItem(ENGINE_KEY) ?? undefined;
 }
 
 export function saveEngineSource(source: 'browser' | 'external'): void {
@@ -30,14 +46,12 @@ export function saveEngineSource(source: 'browser' | 'external'): void {
 }
 
 export function rememberExternalConnection(connection: ExternalConnection): void {
-    localStorage.setItem(CONNECTION_KEY, JSON.stringify(connection));
+    localStorage.setItem(ENGINE_KEY, connection.id);
     connectedThisPage.add(connection.address);
 }
 
 export function forgetExternalConnection(): void {
-    const connection = storedExternalConnection();
-    if (connection) connectedThisPage.delete(connection.address);
-    localStorage.removeItem(CONNECTION_KEY);
+    localStorage.removeItem(ENGINE_KEY);
 }
 
 export async function mayRestoreExternalConnection(address: string): Promise<boolean> {
@@ -52,101 +66,36 @@ export async function mayRestoreExternalConnection(address: string): Promise<boo
 
 export class ExternalEngineSettings {
     private root?: HTMLElement;
-    private address = storedExternalConnection()?.address ?? 'http://127.0.0.1:9670';
-    private token = storedExternalConnection()?.token ?? '';
 
     constructor(private readonly controller: () => AnalysisController | undefined) {}
 
     view(): VNode {
-        const input = (name: string, label: string, value: string, type: string, update: (value: string) => void) =>
+        return h('div.analysis-settings-group.external-engine-settings', {
+            hook: { insert: vnode => { this.root = vnode.elm as HTMLElement; this.refresh(); } },
+        }, [
             h('div.external-engine-field', [
-                h('label', { attrs: { for: name } }, label),
-                h('input#' + name, {
-                    props: { type, value, autocomplete: 'off', spellcheck: false },
-                    on: { input: event => update((event.target as HTMLInputElement).value) },
-                }),
-            ]);
-        return h(
-            'div.analysis-settings-group.external-engine-settings',
-            {
-                hook: {
-                    insert: vnode => {
-                        this.root = vnode.elm as HTMLElement;
-                        this.refresh();
-                    },
-                },
-            },
-            [
-                h('div.external-engine-field', [
-                    h('label', { attrs: { for: 'analysis-engine-source' } }, _('Analysis engine')),
-                    h(
-                        'select#analysis-engine-source',
-                        {
-                            props: { value: preferredEngineSource() },
-                            on: {
-                                change: event =>
-                                    this.controller()?.selectEngineSource(
-                                        (event.target as HTMLSelectElement).value === 'external'
-                                            ? 'external'
-                                            : 'browser',
-                                    ),
-                            },
-                        },
-                        [
-                            h('option', { props: { value: 'browser' } }, _('Browser engine')),
-                            h('option', { props: { value: 'external' } }, _('External engine')),
-                        ],
-                    ),
+                h('label', { attrs: { for: 'analysis-engine-source' } }, _('Engine')),
+                h('div.external-engine-choice', [
+                    h('select#analysis-engine-source', {
+                        on: { change: event => {
+                            const value = (event.target as HTMLSelectElement).value;
+                            if (value === 'browser') this.controller()?.selectEngineSource('browser');
+                            else void this.controller()?.selectExternalEngine(value);
+                        } },
+                    }, [h('option', { props: { value: 'browser' } }, 'Fairy-Stockfish 14+')]),
+                    h('button#external-engine-forget.button', {
+                        props: { type: 'button', hidden: true },
+                        attrs: { title: _('Remove external engine'), 'aria-label': _('Remove external engine') },
+                        on: { click: () => void this.controller()?.removeExternalEngine() },
+                    }, '×'),
                 ]),
-                input('external-engine-address', _('Local address'), this.address, 'url', value => {
-                    this.address = value;
-                }),
-                input('external-engine-token', _('Pairing token'), this.token, 'password', value => {
-                    this.token = value;
-                }),
-                h('div.external-engine-actions', [
-                    h(
-                    'button#external-engine-connect.button',
-                        {
-                            props: { type: 'button' },
-                            on: {
-                                click: () => {
-                                    void this.controller()?.connectExternalEngine(this.address, this.token);
-                                },
-                            },
-                        },
-                        _('Connect'),
-                    ),
-                    h(
-                    'button#external-engine-disconnect.button',
-                        {
-                            props: { type: 'button' },
-                            on: {
-                                click: () => this.controller()?.disconnectExternalEngine(),
-                            },
-                        },
-                        _('Disconnect'),
-                    ),
-                    h(
-                    'button#external-engine-forget.button',
-                        {
-                            props: { type: 'button' },
-                            on: {
-                                click: () => {
-                                    this.controller()?.disconnectExternalEngine(true);
-                                    this.token = '';
-                                    const input = this.root?.querySelector<HTMLInputElement>('#external-engine-token');
-                                    if (input) input.value = '';
-                                },
-                            },
-                        },
-                        _('Forget'),
-                    ),
-                ]),
-                h('p#external-engine-status', { attrs: { role: 'status', 'aria-live': 'polite' } }),
-                h('small', _('Start your local engine app and enter its pairing token.')),
-            ],
-        );
+            ]),
+            h('p#external-engine-status', { attrs: { role: 'status', 'aria-live': 'polite' }, props: { hidden: true } }),
+            h('button#external-engine-retry.button', { props: { type: 'button', hidden: true },
+                on: { click: () => { const ctrl = this.controller();
+                    if (ctrl?.externalEngineId) void ctrl.selectExternalEngine(ctrl.externalEngineId);
+                } } }, _('Retry')),
+        ]);
     }
 
     refresh(): void {
@@ -154,18 +103,30 @@ export class ExternalEngineSettings {
         const root = this.root;
         if (!ctrl || !root) return;
         const select = root.querySelector<HTMLSelectElement>('#analysis-engine-source');
-        const connect = root.querySelector<HTMLButtonElement>('#external-engine-connect');
-        const disconnect = root.querySelector<HTMLButtonElement>('#external-engine-disconnect');
+        const remove = root.querySelector<HTMLButtonElement>('#external-engine-forget');
+        const retry = root.querySelector<HTMLButtonElement>('#external-engine-retry');
         const status = root.querySelector<HTMLElement>('#external-engine-status');
         const allowed = ctrl.canUseExternalEngine();
         if (select) {
-            select.value = ctrl.engineSource;
-            const externalOption = select.querySelector<HTMLOptionElement>('option[value="external"]');
-            if (externalOption) externalOption.disabled = !allowed;
+            // Engine discovery and chapter changes refresh this mounted control.
+            select.querySelectorAll('option:not([value="browser"])').forEach(option => option.remove());
+            for (const engine of ctrl.externalEngines) {
+                const option = document.createElement('option');
+                option.value = engine.id;
+                option.textContent = ctrl.externalEngineDisplayName(engine);
+                option.disabled = !allowed || !ctrl.supportsExternalEngine(engine);
+                select.appendChild(option);
+            }
+            select.value = ctrl.engineSource === 'external' ? ctrl.externalEngineId ?? 'browser' : 'browser';
         }
-        if (connect) connect.disabled = !allowed || ctrl.externalEngineStatus === 'loading';
-        if (disconnect) disconnect.disabled = ctrl.externalEngineStatus === 'disconnected';
-        if (status) status.textContent = ctrl.externalEngineStatusText();
+        if (remove) remove.hidden = ctrl.engineSource !== 'external' || !ctrl.externalEngineId;
+        const error = ctrl.engineSource === 'external' && ctrl.externalEngineStatus === 'error';
+        if (status) {
+            status.textContent = ctrl.externalEngineStatusText();
+            status.hidden = ctrl.engineSource !== 'external' ||
+                (ctrl.externalEngineStatus !== 'loading' && !error && ctrl.isSelectedEngineReady());
+        }
+        if (retry) retry.hidden = !allowed || !error || !ctrl.externalEngineId;
         root.closest<HTMLElement>('.analysis-settings')?.setAttribute('data-engine-source', ctrl.engineSource);
     }
 }
