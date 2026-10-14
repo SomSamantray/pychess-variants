@@ -113,7 +113,7 @@ export class ExternalEngineSettings {
             for (const engine of ctrl.externalEngines) {
                 const option = document.createElement('option');
                 option.value = engine.id;
-                option.textContent = ctrl.externalEngineDisplayName(engine);
+                option.textContent = engine.engine.name;
                 option.disabled = !allowed || !ctrl.supportsExternalEngine(engine);
                 select.appendChild(option);
             }

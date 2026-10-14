@@ -12,7 +12,7 @@ const engine = { id: 'engine01', address: 'http://127.0.0.1:9670', token: 'x'.re
 function mount(overrides: object = {}) {
     const ctrl = { externalEngines: [], engineSource: 'browser', externalEngineStatus: 'disconnected',
         canUseExternalEngine: () => true, externalEngineStatusText: () => 'Disconnected',
-        isSelectedEngineReady: () => true, externalEngineDisplayName: () => 'My UCI engine',
+        isSelectedEngineReady: () => true,
         supportsExternalEngine: () => true, ...overrides };
     const settings = new ExternalEngineSettings(() => ctrl as AnalysisController);
     const host = document.createElement('div');

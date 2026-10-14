@@ -8,7 +8,7 @@ export interface ExternalCapabilities {
     maxThreads: number;
     maxHash: number;
     maxMultiPv: number;
-    adapters?: { alice: ExternalCapabilities };
+    variantRestrictions?: Record<string, { chess960: boolean; customRules: boolean }>;
 }
 
 export interface ExternalSearchSession {
@@ -70,25 +70,29 @@ export function parseCapabilities(value: unknown): ExternalCapabilities {
         !integer(engine.maxMultiPv, 1, 20)
     )
         throw new ExternalEngineError('invalid_protocol');
-    if (engine.adapters !== undefined) {
-        if (!record(engine.adapters) || Object.keys(engine.adapters).some(key => key !== 'alice') ||
-            !record(engine.adapters.alice) || engine.adapters.alice.adapters !== undefined)
-            throw new ExternalEngineError('invalid_protocol');
-        const alice = parseCapabilities({ ...value, engine: engine.adapters.alice });
-        if (alice.chess960 || alice.customRules || alice.variants.length !== 1 || alice.variants[0] !== 'alice')
-            throw new ExternalEngineError('invalid_protocol');
-    } else if (engine.variants.includes('alice')) {
-        // Standalone Alice capabilities also require the adapter's fixed rules.
-        if (engine.variants.length !== 1 || engine.chess960 || engine.customRules)
+    if (engine.adapters !== undefined) throw new ExternalEngineError('invalid_protocol');
+    const variants = engine.variants;
+    if (engine.variantRestrictions !== undefined) {
+        if (!record(engine.variantRestrictions) || Object.entries(engine.variantRestrictions).some(([variant, flags]) =>
+            !variants.includes(variant) || !record(flags) ||
+            Object.keys(flags).length !== 2 || typeof flags.chess960 !== 'boolean' ||
+            typeof flags.customRules !== 'boolean' ||
+            (flags.chess960 && !engine.chess960) || (flags.customRules && !engine.customRules)))
             throw new ExternalEngineError('invalid_protocol');
     }
     return engine as unknown as ExternalCapabilities;
 }
 
-export function externalCapabilitiesFor(engine: ExternalCapabilities | undefined, variant: string): ExternalCapabilities | undefined {
-    if (!engine || variant !== 'alice') return engine;
-    return engine.adapters?.alice ??
-        (engine.variants.length === 1 && engine.variants[0] === 'alice' ? engine : undefined);
+export function externalEngineSupports(
+    engine: ExternalCapabilities | undefined,
+    search: Pick<AnalysisSearch, 'engineVariant' | 'chess960' | 'rules'>,
+): boolean {
+    if (!engine) return false;
+    const restrictions = engine.variantRestrictions?.[search.engineVariant];
+    return (!search.chess960 || (engine.chess960 && restrictions?.chess960 !== false)) &&
+        (search.rules
+            ? engine.customRules && restrictions?.customRules !== false
+            : engine.variants.includes(search.engineVariant));
 }
 
 async function checkResponse(response: Response): Promise<void> {
@@ -135,21 +139,12 @@ export class ExternalSearchBackend implements AnalysisSearchBackend {
         return this.engine;
     }
 
-    capabilitiesFor(engineVariant: string): ExternalCapabilities | undefined {
-        return externalCapabilitiesFor(this.engine, engineVariant);
-    }
-
     get capabilities() {
         return { available: !!this.engine && !this.destroyed, supportsVariant: !!this.engine };
     }
 
     supports(search: Pick<AnalysisSearch, 'engineVariant' | 'chess960' | 'rules'>): boolean {
-        const engine = this.capabilitiesFor(search.engineVariant);
-        return (
-            !!engine &&
-            (!search.chess960 || engine.chess960) &&
-            (search.rules ? engine.customRules : engine.variants.includes(search.engineVariant))
-        );
+        return externalEngineSupports(this.engine, search);
     }
 
     private updateStatus(status: SearchBackendStatus, code?: string): void {
@@ -224,7 +219,7 @@ export class ExternalSearchBackend implements AnalysisSearchBackend {
         abort: AbortController,
         retryCleanup: boolean,
     ): Promise<void> {
-        const engine = this.capabilitiesFor(search.engineVariant)!;
+        const engine = this.engine!;
         const searchId = crypto.randomUUID();
         const body = {
             protocolVersion: 1,

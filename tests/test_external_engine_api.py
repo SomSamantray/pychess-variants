@@ -223,7 +223,7 @@ class ExternalEngineApiTest(AioHTTPTestCase):
         for engine in (
             None,
             {**self.registration()["engine"], "maxThreads": True},
-            {**self.registration()["engine"], "variants": ["alice", "chess"]},
+            {**self.registration()["engine"], "adapters": {}},
         ):
             self.assertEqual(
                 (await self.register(token, self.registration(engine=engine))).status, 400
@@ -231,3 +231,63 @@ class ExternalEngineApiTest(AioHTTPTestCase):
         self.assertEqual(
             (await self.register(token, self.registration(padding="x" * 100000))).status, 413
         )
+
+    async def test_registration_preserves_one_engine_with_variant_restrictions(self):
+        _, token = await self.create_owner()
+        engine = {
+            **self.registration()["engine"],
+            "variants": ["chess", "alice"],
+            "customRules": True,
+            "variantRestrictions": {"alice": {"chess960": False, "customRules": False}},
+        }
+        self.assertEqual((await self.register(token, self.registration(engine=engine))).status, 200)
+        registrations = await (
+            await self.client.get("/api/external-engine", headers=self.headers(token))
+        ).json()
+        self.assertEqual(registrations[0]["engine"], engine)
+
+    async def test_variant_restrictions_are_bounded_boolean_reductions(self):
+        _, token = await self.create_owner()
+        engine = {**self.registration()["engine"], "customRules": True}
+        for restrictions in (
+            None,
+            [],
+            {"unknown": {"chess960": False, "customRules": False}},
+            {"chess": {"chess960": "false", "customRules": False}},
+            {"chess": {"chess960": False}},
+            {"chess": {"chess960": False, "customRules": False, "name": "Other engine"}},
+            {"chess": {"chess960": False, "customRules": False, "maxThreads": 1}},
+        ):
+            with self.subTest(restrictions=restrictions):
+                self.assertEqual(
+                    (
+                        await self.register(
+                            token,
+                            self.registration(
+                                engine={**engine, "variantRestrictions": restrictions}
+                            ),
+                        )
+                    ).status,
+                    400,
+                )
+        for key in ("chess960", "customRules"):
+            self.assertEqual(
+                (
+                    await self.register(
+                        token,
+                        self.registration(
+                            engine={
+                                **engine,
+                                key: False,
+                                "variantRestrictions": {
+                                    "chess": {
+                                        "chess960": key == "chess960",
+                                        "customRules": key == "customRules",
+                                    }
+                                },
+                            }
+                        ),
+                    )
+                ).status,
+                400,
+            )

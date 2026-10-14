@@ -56,7 +56,7 @@ async def session_owner(request: web.Request) -> tuple[Any, str]:
     return app_state, user.username
 
 
-def validate_engine(engine: Any, *, alice: bool = False) -> dict[str, Any]:
+def validate_engine(engine: Any) -> dict[str, Any]:
     if not isinstance(engine, dict):
         raise web.HTTPBadRequest(text="Invalid engine capabilities")
     name = engine.get("name")
@@ -95,16 +95,21 @@ def validate_engine(engine: Any, *, alice: bool = False) -> dict[str, Any]:
         )
     }
     if "adapters" in engine:
-        if (
-            alice
-            or not isinstance(engine["adapters"], dict)
-            or set(engine["adapters"]) != {"alice"}
+        raise web.HTTPBadRequest(text="Only one engine can be registered per local app")
+    if "variantRestrictions" in engine:
+        restrictions = engine["variantRestrictions"]
+        if not isinstance(restrictions, dict) or any(
+            variant not in variants
+            or not isinstance(flags, dict)
+            or set(flags) != {"chess960", "customRules"}
+            or any(
+                type(value) is not bool or (value and not engine[key])
+                for key, value in flags.items()
+            )
+            for variant, flags in restrictions.items()
         ):
-            raise web.HTTPBadRequest(text="Invalid engine adapters")
-        parsed["adapters"] = {"alice": validate_engine(engine["adapters"]["alice"], alice=True)}
-    elif alice or "alice" in variants:
-        if variants != ["alice"] or engine["chess960"] or engine["customRules"]:
-            raise web.HTTPBadRequest(text="Invalid Alice capabilities")
+            raise web.HTTPBadRequest(text="Invalid variant restrictions")
+        parsed["variantRestrictions"] = restrictions
     return parsed
 
 

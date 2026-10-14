@@ -82,13 +82,17 @@ Fairy-Stockfish/WASM engine does not support Alice search.
 
 ## Local native analysis
 
-The paired external engine reports ordinary capabilities and optional
-`engine.adapters.alice` capabilities separately. Alice requires its dedicated
-configured native engine and `pyffish-alice` rules validator; neither successful
-PGN replay nor the ordinary engine's custom-rules flag enables it. The adapter
-supports fixed Alice rules, compact looking-glass FEN and coordinate move tokens;
-Alice Chess960 and custom rules are unavailable. Page/Study/anti-cheat restrictions
-still apply, and Practice retains its browser engine ownership.
+Each paired external app configures one UCI executable. Its capabilities contain
+one name, one set of resource limits and its supported variant list. The optional
+`engine.variantRestrictions` map narrows Chess960/custom-rule support for specific
+advertised variants without selecting another executable or changing resource limits.
+
+An advertised Alice capability is qualified with a native search and validated with
+`pyffish-alice`; neither successful PGN replay nor an engine's ordinary custom-rules
+flag enables it. The bridge reports `variantRestrictions.alice` with `chess960: false`
+and `customRules: false`. Alice uses compact looking-glass FEN and coordinate move
+tokens. Page/Study/anti-cheat restrictions still apply, and Practice retains its
+browser engine ownership.
 
 See [the integration reference](external-engine.md) for frontend ownership and
 links to the local application design, protocol and compatibility documentation.

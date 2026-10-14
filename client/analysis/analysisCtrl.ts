@@ -45,7 +45,7 @@ import { AnalysisTreeController } from './analysisTreeCtrl';
 import { analysisContext, type AnalysisContext } from './analysisContext';
 import { BrowserSearchBackend } from './browserSearchBackend';
 import type { AnalysisSearchBackend, AnalysisSearch } from './searchBackend';
-import { ExternalSearchBackend, ExternalEngineError, externalCapabilitiesFor } from './externalSearchBackend';
+import { ExternalSearchBackend, ExternalEngineError, externalEngineSupports } from './externalSearchBackend';
 import { externalRulesIni, hashExternalRules } from './externalRules';
 import {
     preferredEngineSource,
@@ -829,14 +829,12 @@ export class AnalysisController extends GameController {
         return this.externalFailure ? 'error' : this.externalSearch.status;
     }
 
-    externalEngineDisplayName(connection: ExternalConnection): string {
-        return externalCapabilitiesFor(connection.engine, this.engineVariant)?.name ?? connection.engine.name;
-    }
-
     supportsExternalEngine(connection: ExternalConnection): boolean {
-        const engine = externalCapabilitiesFor(connection.engine, this.engineVariant);
-        return !!engine && (!this.chess960 || engine.chess960) && !this.externalRulesInvalid &&
-            (this.externalRulesText ? engine.customRules : engine.variants.includes(this.engineVariant));
+        return !this.externalRulesInvalid && externalEngineSupports(connection.engine, {
+            engineVariant: this.engineVariant,
+            chess960: this.chess960,
+            rules: this.externalRulesText ? { ini: this.externalRulesText, sha256: '' } : undefined,
+        });
     }
 
     async selectExternalEngine(id: string): Promise<void> {
@@ -906,7 +904,7 @@ export class AnalysisController extends GameController {
         if (this.externalSearch.status === 'disconnected') return _('Disconnected');
         if (this.engineSource === 'external' && !this.isSelectedEngineReady())
             return _('This engine cannot analyse this variant.');
-        return this.externalSearch.capabilitiesFor(this.engineVariant)?.name ?? _('Disconnected');
+        return this.externalSearch.engineCapabilities?.name ?? _('Disconnected');
     }
 
     selectEngineSource(source: 'browser' | 'external'): void {
@@ -988,7 +986,7 @@ export class AnalysisController extends GameController {
         if (label)
             label.textContent =
                 this.engineSource === 'external'
-                    ? (this.externalSearch.capabilitiesFor(this.engineVariant)?.name ?? _('External engine')) + ' '
+                    ? (this.externalSearch.engineCapabilities?.name ?? _('External engine')) + ' '
                     : 'Fairy-Stockfish 14+ ';
         this.refreshNnueIndicator();
     }

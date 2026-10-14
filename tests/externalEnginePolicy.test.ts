@@ -38,6 +38,25 @@ test('external capability is independent of WASM readiness and variant support',
     expect(ctrl.isSelectedEngineReady()).toBe(false);
 });
 
+test('registration selection applies variant restrictions alongside exact-rule validity', () => {
+    const ctrl = controller();
+    const connection = { engine: { name: 'One engine', variants: ['chess', 'alice'],
+        chess960: true, customRules: true, maxThreads: 2, maxHash: 64, maxMultiPv: 2,
+        variantRestrictions: { alice: { chess960: false, customRules: false } } } };
+    expect(ctrl.supportsExternalEngine(connection)).toBe(true);
+    ctrl.engineVariant = 'alice';
+    expect(ctrl.supportsExternalEngine(connection)).toBe(true);
+    ctrl.chess960 = true;
+    expect(ctrl.supportsExternalEngine(connection)).toBe(false);
+    ctrl.chess960 = false;
+    ctrl.externalRulesText = '[alice:chess]';
+    expect(ctrl.supportsExternalEngine(connection)).toBe(false);
+    ctrl.engineVariant = 'new-snapshot';
+    expect(ctrl.supportsExternalEngine(connection)).toBe(true);
+    ctrl.externalRulesInvalid = true;
+    expect(ctrl.supportsExternalEngine(connection)).toBe(false);
+});
+
 test('ongoing games, Practice/unsupported adapters, concealed lessons and anti-cheat block external use', () => {
     const ctrl = controller();
     expect(ctrl.canUseExternalEngine()).toBe(true);

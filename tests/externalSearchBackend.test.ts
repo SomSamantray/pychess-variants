@@ -338,7 +338,7 @@ test('standalone Alice capabilities enable fixed-rule analysis and use their sea
     });
     await backend.connect(ADDRESS, TOKEN);
     expect(backend.status).toBe('ready');
-    expect(backend.capabilitiesFor('alice')).toEqual(alice);
+    expect(backend.engineCapabilities).toEqual(alice);
     expect(backend.supports({ engineVariant: 'alice', chess960: false })).toBe(true);
     expect(backend.supports({ engineVariant: 'alice', chess960: true })).toBe(false);
     expect(backend.supports({ engineVariant: 'alice', chess960: false,
@@ -360,26 +360,69 @@ test('standalone Alice capabilities enable fixed-rule analysis and use their sea
     backend.destroy();
 });
 
-test('Alice uses its explicit adapter when paired and accepts only its fixed rules', async () => {
+test('variant restrictions narrow support while identity and resource limits belong to one engine', async () => {
     const events = { canSearch: () => true, onEvaluation: jest.fn() };
     const plain = testBackend(events, async () => jsonResponse(capabilities));
     await plain.connect(ADDRESS, TOKEN);
     expect(plain.supports({ engineVariant: 'alice', chess960: false })).toBe(false);
     plain.destroy();
-    const alice = { ...capabilities.engine, name: 'Alice-Stockfish', variants: ['alice'],
-        chess960: false, customRules: false };
-    const backend = testBackend(events, async () => jsonResponse({ ...capabilities,
-        engine: { ...capabilities.engine, variants: ['shogi', 'alice'], adapters: { alice } } }));
+    const engine = { ...capabilities.engine, variants: ['shogi', 'alice'],
+        variantRestrictions: { alice: { chess960: false, customRules: false } } };
+    const stream = streamResponse();
+    let body: Record<string, unknown> = {};
+    const backend = testBackend(events, async (_url, init) => {
+        if (!init?.body) return jsonResponse({ ...capabilities, engine });
+        body = JSON.parse(init.body as string);
+        return stream.response;
+    });
     await backend.connect(ADDRESS, TOKEN);
     expect(backend.supports({ engineVariant: 'alice', chess960: false })).toBe(true);
-    expect(backend.capabilitiesFor('alice')?.name).toBe('Alice-Stockfish');
+    expect(backend.engineCapabilities?.name).toBe('Test engine');
     expect(backend.supports({ engineVariant: 'alice', chess960: true })).toBe(false);
     expect(backend.supports({ engineVariant: 'alice', chess960: false,
         rules: { ini: '[alice:chess]', sha256: 'x' } })).toBe(false);
     expect(backend.supports({ engineVariant: 'shogi', chess960: true })).toBe(true);
+    expect(backend.supports({ engineVariant: 'shogi', chess960: false,
+        rules: { ini: '[shogi:chess]', sha256: 'x' } })).toBe(true);
+    expect(backend.supports({ engineVariant: 'new-snapshot', chess960: false,
+        rules: { ini: '[new-snapshot:chess]', sha256: 'x' } })).toBe(true);
+    backend.start({ ...search, variant: 'alice', engineVariant: 'alice' });
+    await eventually(() => !!body.searchId);
+    expect(body).toMatchObject({ variant: 'alice', threads: 2, hash: 64, multiPv: 2 });
+    stream.write(JSON.stringify({ protocolVersion: 1, searchId: body.searchId, type: 'completed' }) + '\n');
+    stream.close();
+    await eventually(() => backend.status === 'ready');
     backend.destroy();
-    const invalid = testBackend(events, async () => jsonResponse({ ...capabilities,
-        engine: { ...capabilities.engine, adapters: { alice: { ...alice, customRules: true } } } }));
-    await expect(invalid.connect(ADDRESS, TOKEN)).rejects.toThrow('invalid_protocol');
-    invalid.destroy();
+});
+
+test('restrictions apply to arbitrary advertised variants rather than special engine names', async () => {
+    const backend = testBackend({ canSearch: () => true, onEvaluation: jest.fn() }, async () =>
+        jsonResponse({ ...capabilities, engine: { ...capabilities.engine,
+            variantRestrictions: { shogi: { chess960: false, customRules: false } } } }));
+    await backend.connect(ADDRESS, TOKEN);
+    expect(backend.supports({ engineVariant: 'shogi', chess960: false })).toBe(true);
+    expect(backend.supports({ engineVariant: 'shogi', chess960: true })).toBe(false);
+    expect(backend.supports({ engineVariant: 'shogi', chess960: false,
+        rules: { ini: '[shogi:chess]', sha256: 'x' } })).toBe(false);
+    backend.destroy();
+});
+
+test('invalid restrictions and nested engine profiles are rejected during pairing', async () => {
+    for (const changes of [
+        { variantRestrictions: null },
+        { variantRestrictions: [] },
+        { variantRestrictions: { missing: { chess960: false, customRules: false } } },
+        { variantRestrictions: { shogi: { chess960: 'false', customRules: false } } },
+        { variantRestrictions: { shogi: { chess960: false } } },
+        { variantRestrictions: { shogi: { chess960: false, customRules: false, name: 'Other engine' } } },
+        { variantRestrictions: { shogi: { chess960: false, customRules: false, maxThreads: 1 } } },
+        { customRules: false, variantRestrictions: { shogi: { chess960: false, customRules: true } } },
+        { chess960: false, variantRestrictions: { shogi: { chess960: true, customRules: false } } },
+        { adapters: { alice: capabilities.engine } },
+    ]) {
+        const invalid = testBackend({ canSearch: () => true, onEvaluation: jest.fn() }, async () =>
+            jsonResponse({ ...capabilities, engine: { ...capabilities.engine, ...changes } }));
+        await expect(invalid.connect(ADDRESS, TOKEN)).rejects.toThrow('invalid_protocol');
+        invalid.destroy();
+    }
 });
