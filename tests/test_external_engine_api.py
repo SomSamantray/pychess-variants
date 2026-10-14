@@ -119,9 +119,7 @@ class ExternalEngineApiTest(AioHTTPTestCase):
         self.assertEqual(data[0]["engine"]["name"], "Any UCI engine")
         self.assertEqual(data[0]["token"], self.registration()["clientSecret"])
         # Bearer discovery is metadata-only, even for a combined read/write token.
-        bearer_response = await self.client.get(
-            "/api/external-engine", headers=self.headers(token)
-        )
+        bearer_response = await self.client.get("/api/external-engine", headers=self.headers(token))
         bearer_data = await bearer_response.json()
         self.assertEqual(bearer_data[0]["engine"], data[0]["engine"])
         self.assertNotIn("token", bearer_data[0])
@@ -144,9 +142,7 @@ class ExternalEngineApiTest(AioHTTPTestCase):
         _, read_token = await create_bot_token(
             state, "alice", "Read-only engine discovery", scopes=("engine:read",)
         )
-        response = await self.client.get(
-            "/api/external-engine", headers=self.headers(read_token)
-        )
+        response = await self.client.get("/api/external-engine", headers=self.headers(read_token))
         self.assertEqual(response.status, 200)
         registrations = await response.json()
         self.assertEqual(len(registrations), 1)
