@@ -87,7 +87,7 @@ export class ExternalEngineSettings {
                         props: { type: 'button', hidden: true },
                         attrs: { title: _('Remove external engine'), 'aria-label': _('Remove external engine') },
                         on: { click: () => void this.controller()?.removeExternalEngine() },
-                    }, '×'),
+                    }, [h('i.icon.icon-trash-o', { attrs: { 'aria-hidden': 'true' } })]),
                 ]),
             ]),
             h('p#external-engine-status', { attrs: { role: 'status', 'aria-live': 'polite' }, props: { hidden: true } }),
