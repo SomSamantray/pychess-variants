@@ -48,6 +48,64 @@ subprocesses and rules workers. Pychess owns page permissions, board/tree state,
 engine choice and display. See [Engine-Capabilities.md](Engine-Capabilities.md) for
 the separation between browser search, native search, rules replay, Fishnet and Practice.
 
+## Comparison with Lichess external engines
+
+The current feature provides native analysis on the same computer as the browser.
+The Pychess website manages account registrations; the local app receives analysis
+requests and streams evaluations directly to the browser. Positions, move history,
+custom rules and evaluations do not pass through the website's registration API.
+
+Lichess's documented external-engine protocol separates account registration on
+`lichess.org` from analysis transport through a broker at `engine.lichess.ovh`.
+The browser requests analysis from that broker. The engine provider acquires work
+through long polling, then streams UCI output back to the broker, which delivers
+evaluations to the browser. See the official
+[analysis request](https://github.com/lichess-org/api/blob/master/doc/specs/tags/externalengine/api-external-engine-id-analyse.yaml),
+[work acquisition](https://github.com/lichess-org/api/blob/master/doc/specs/tags/externalengine/api-external-engine-work.yaml)
+and [result submission](https://github.com/lichess-org/api/blob/master/doc/specs/tags/externalengine/api-external-engine-work-id.yaml)
+contracts and the [lila-engine broker](https://github.com/lichess-org/lila-engine).
+
+```text
+Pychess analysis: browser <-> local loopback app <-> native UCI engine
+Lichess analysis: browser <-> hosted broker <-> engine provider <-> native UCI engine
+```
+
+The endpoint mapping follows these different responsibilities. Lichess's management
+operations are defined in its
+[registration API](https://github.com/lichess-org/api/blob/master/doc/specs/tags/externalengine/api-external-engine.yaml)
+and [individual-engine API](https://github.com/lichess-org/api/blob/master/doc/specs/tags/externalengine/api-external-engine-id.yaml).
+
+| Operation | Lichess | Current Pychess implementation |
+| --- | --- | --- |
+| List registrations | Website `GET /api/external-engine` | Website `GET /api/external-engine` |
+| Register an engine | Website `POST /api/external-engine` | Website `POST /api/external-engine` |
+| Read one registration | Website `GET /api/external-engine/{id}` | Select the ID from the returned registration list |
+| Update registration metadata | Website `PUT /api/external-engine/{id}` | Re-register with `POST /api/external-engine`; the account token ID identifies the registration to replace |
+| Remove a registration | Website `DELETE /api/external-engine/{id}` | Owner `POST /api/external-engine/{id}/delete`, or provider `POST /api/external-engine/{id}/stop` on shutdown |
+| Request analysis and receive evaluations | Broker `POST /api/external-engine/{id}/analyse` | Local app `POST /v1/analyse`, returning an NDJSON stream |
+| Acquire requested work | Broker `POST /api/external-engine/work` | The local app receives the browser request directly |
+| Submit engine output | Broker `POST /api/external-engine/work/{id}` | The local app streams evaluations through the original analysis response |
+
+Pychess also uses registration heartbeats and expiry to track a running local app,
+and local `GET /v1/capabilities` to discover its current capabilities. Separate
+work-acquisition and result-submission endpoints are unnecessary for this direct
+transport. The protocols are not API-compatible: Pychess carries exact variant rules
+and search identity, uses side-to-move scores, and restricts loopback credential
+discovery to signed-in browser sessions.
+
+Account discovery does not provide cross-device connectivity. Registrations accept
+only IPv4 loopback addresses, and `127.0.0.1` always refers to the browser's own
+computer. A phone cannot use a desktop engine, and a browser cannot use a VPS engine
+through the current integration. Lichess's broker transport can connect a browser
+and provider running on different machines.
+
+Lichess-style remote support would require a broker with authenticated client/provider
+access, work routing, result streaming, ownership, cancellation and timeout handling,
+plus corresponding frontend and provider changes. It would introduce hosted analysis
+transport infrastructure. Such an extension must preserve the existing variant-rule,
+Study, anti-cheat and Practice restrictions. It is future feature work; the current
+website and local-app endpoints cover the same-computer native-analysis scope.
+
 ## Pairing and lifecycle
 
 Users create an engine token at `/account/engines`, configure the local app with it
