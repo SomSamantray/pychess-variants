@@ -118,6 +118,14 @@ class ExternalEngineApiTest(AioHTTPTestCase):
         self.assertEqual(len(data), 1)
         self.assertEqual(data[0]["engine"]["name"], "Any UCI engine")
         self.assertEqual(data[0]["token"], self.registration()["clientSecret"])
+        # Bearer discovery is metadata-only, even for a combined read/write token.
+        bearer_response = await self.client.get(
+            "/api/external-engine", headers=self.headers(token)
+        )
+        bearer_data = await bearer_response.json()
+        self.assertEqual(bearer_data[0]["engine"], data[0]["engine"])
+        self.assertNotIn("token", bearer_data[0])
+        self.assertNotIn(self.registration()["clientSecret"], json.dumps(bearer_data))
         self.assertNotIn(token, json.dumps(data))
         self.assertEqual(response.headers["Cache-Control"], "no-store")
         self.assertEqual(
@@ -128,6 +136,24 @@ class ExternalEngineApiTest(AioHTTPTestCase):
             ).status,
             403,
         )
+
+    async def test_read_only_token_lists_metadata_without_disclosing_secret(self):
+        _, registration_token = await self.create_owner()
+        self.assertEqual((await self.register(registration_token)).status, 200)
+        state = get_app_state(self.app)
+        _, read_token = await create_bot_token(
+            state, "alice", "Read-only engine discovery", scopes=("engine:read",)
+        )
+        response = await self.client.get(
+            "/api/external-engine", headers=self.headers(read_token)
+        )
+        self.assertEqual(response.status, 200)
+        registrations = await response.json()
+        self.assertEqual(len(registrations), 1)
+        self.assertEqual(registrations[0]["engine"], self.registration()["engine"])
+        self.assertNotIn("token", registrations[0])
+        self.assertNotIn(self.registration()["clientSecret"], json.dumps(registrations))
+        self.assertEqual((await self.register(read_token)).status, 403)
 
     async def test_legacy_bot_tokens_keep_their_original_scope(self):
         await self.create_owner()
@@ -159,7 +185,10 @@ class ExternalEngineApiTest(AioHTTPTestCase):
             200,
         )
         response = await self.client.get("/api/external-engine", headers=self.headers(token))
-        self.assertEqual((await response.json())[0]["token"], replacement["clientSecret"])
+        self.assertNotIn("token", (await response.json())[0])
+        self.session_user("alice")
+        session_response = await self.client.get("/api/external-engine")
+        self.assertEqual((await session_response.json())[0]["token"], replacement["clientSecret"])
 
     async def test_revoked_disabled_and_expired_registrations_are_unavailable(self):
         token_id, token = await self.create_owner()

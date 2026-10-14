@@ -213,10 +213,14 @@ async def stop_engine(request: web.Request) -> web.Response:
 
 
 async def list_engines(request: web.Request) -> web.Response:
-    if request.headers.get("Authorization"):
-        app_state, username, _ = await token_owner(request, "engine:read")
-    else:
+    # API tokens may enumerate registrations, but only a signed-in browser
+    # session can retrieve the loopback bearer credential used for analysis.
+    # This also applies to tokens granted both engine:read and engine:write.
+    include_secret = not request.headers.get("Authorization")
+    if include_secret:
         app_state, username = await session_owner(request)
+    else:
+        app_state, username, _ = await token_owner(request, "engine:read")
     if app_state.db is None:
         return response([])
     tokens = await app_state.db.bot_token.find(
@@ -231,7 +235,7 @@ async def list_engines(request: web.Request) -> web.Response:
             {
                 "id": doc["_id"],
                 "address": doc["address"],
-                "token": doc["clientSecret"],
+                **({"token": doc["clientSecret"]} if include_secret else {}),
                 "engine": doc["engine"],
             }
             for doc in docs
