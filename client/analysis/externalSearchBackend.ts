@@ -26,6 +26,8 @@ export class ExternalEngineError extends Error {
 type Fetch = typeof fetch;
 type LoopbackRequest = RequestInit & { targetAddressSpace: 'loopback' };
 const MAX_LINE = 128 * 1024;
+const MAX_SEARCH_MILLIS = 15 * 60 * 1000;
+const SEARCH_TIMEOUT_GRACE_MILLIS = 30000;
 const record = (value: unknown): value is Record<string, unknown> =>
     value !== null && typeof value === 'object' && !Array.isArray(value);
 const integer = (value: unknown, minimum: number, maximum: number): value is number =>
@@ -257,6 +259,12 @@ export class ExternalSearchBackend implements AnalysisSearchBackend {
             }
             await checkResponse(response);
             clearTimeout(timer);
+            // A deep iteration can legitimately emit no PV for over 30 seconds.
+            // Bound the entire search instead of treating silence as a failure.
+            timer = setTimeout(
+                () => abort.abort(),
+                (body.search.movetime ?? MAX_SEARCH_MILLIS) + SEARCH_TIMEOUT_GRACE_MILLIS,
+            );
             if (!response.body || !response.headers.get('Content-Type')?.startsWith('application/x-ndjson'))
                 throw new ExternalEngineError('invalid_protocol');
             reader = response.body.getReader();
@@ -264,8 +272,6 @@ export class ExternalSearchBackend implements AnalysisSearchBackend {
             let buffer = '';
             let completed = false;
             while (current()) {
-                clearTimeout(timer);
-                timer = setTimeout(() => abort.abort(), 30000);
                 const chunk = await reader.read();
                 if (chunk.done) break;
                 buffer += decoder.decode(chunk.value, { stream: true });

@@ -67,6 +67,7 @@ function streamResponse() {
         } as unknown as Response,
         write: (text: string) => controller.enqueue(new TextEncoder().encode(text)),
         close: () => controller.close(),
+        fail: (error: Error) => controller.error(error),
         locked: () => stream.locked,
     };
 }
@@ -78,6 +79,75 @@ async function eventually(predicate: () => boolean) {
     }
     throw new Error('Expected asynchronous backend state');
 }
+
+test.each([18, 99])('quiet native searches survive 30 seconds and remain bounded (depth %s)', async maxDepth => {
+    jest.useFakeTimers();
+    const stream = streamResponse();
+    let signal: AbortSignal | undefined;
+    let searchId: string | undefined;
+    const backend = testBackend({ canSearch: () => true, onEvaluation: jest.fn() }, async (_url, init) => {
+        if (!init?.body) return jsonResponse(capabilities);
+        signal = init.signal!;
+        searchId = JSON.parse(init.body as string).searchId;
+        signal.addEventListener('abort', () => stream.fail(new DOMException('Aborted', 'AbortError')), { once: true });
+        return stream.response;
+    });
+    try {
+        await backend.connect(ADDRESS, TOKEN);
+        backend.start({ ...search, maxDepth });
+        await jest.advanceTimersByTimeAsync(0);
+        stream.write(JSON.stringify({ protocolVersion: 1, type: 'started', searchId }) + '\n');
+        await jest.advanceTimersByTimeAsync(31000);
+        expect(signal?.aborted).toBe(false);
+        expect(backend.status).toBe('searching');
+        const deadline = (maxDepth >= 99 ? 15 * 60 * 1000 : 90000) + 30000;
+        await jest.advanceTimersByTimeAsync(deadline - 31000 - 1);
+        expect(signal?.aborted).toBe(false);
+        await jest.advanceTimersByTimeAsync(1);
+        expect(signal?.aborted).toBe(true);
+        expect(backend.status).toBe('error');
+        expect(jest.getTimerCount()).toBe(0);
+    } finally {
+        backend.destroy();
+        jest.useRealTimers();
+    }
+});
+
+test('a quiet deep iteration can finish successfully and clears its deadline', async () => {
+    jest.useFakeTimers();
+    const stream = streamResponse();
+    let searchId: string | undefined;
+    const onEvaluation = jest.fn();
+    const backend = testBackend({ canSearch: () => true, onEvaluation }, async (_url, init) => {
+        if (!init?.body) return jsonResponse(capabilities);
+        searchId = JSON.parse(init.body as string).searchId;
+        return stream.response;
+    });
+    try {
+        await backend.connect(ADDRESS, TOKEN);
+        backend.start({ ...search, maxDepth: 99 });
+        await jest.advanceTimersByTimeAsync(60000);
+        stream.write(
+            JSON.stringify({
+                protocolVersion: 1,
+                type: 'evaluation',
+                searchId,
+                nodes: 100000,
+                millis: 60000,
+                pvs: [{ depth: 30, multiPv: 1, cp: 32, moves: ['e7e8+'] }],
+            }) + '\n',
+        );
+        stream.write(JSON.stringify({ protocolVersion: 1, type: 'completed', searchId }) + '\n');
+        stream.close();
+        await jest.advanceTimersByTimeAsync(0);
+        expect(onEvaluation).toHaveBeenCalledTimes(1);
+        expect(backend.status).toBe('ready');
+        expect(jest.getTimerCount()).toBe(0);
+    } finally {
+        backend.destroy();
+        jest.useRealTimers();
+    }
+});
 
 test('connection addresses stay on IPv4 loopback and reject credentials or paths', () => {
     expect(externalAddress(ADDRESS + '/')).toBe(ADDRESS);

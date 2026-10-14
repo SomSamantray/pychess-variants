@@ -16,6 +16,19 @@ Its [architecture](https://github.com/pychess/pychess-external-engine/blob/main/
 and [roadmap](https://github.com/pychess/pychess-external-engine/blob/main/docs/roadmap.md)
 cover the application design and future enhancements.
 
+This integration requires the companion's account-registration release, version
+`0.2.0` or later. The earlier `0.1.0a1` manual-pairing interface is incompatible.
+Create an account engine token, save it in a local file, and run:
+
+```bash
+uvx --python 3.13 pychess-external-engine@0.2.0 \
+  --engine /path/to/your-uci-engine --token-file /path/to/your-token
+```
+
+Configure any engine options or NNUE networks in the local app as described in its
+usage guide. Each app configures one executable; an Alice engine uses the same
+`--engine` option and its own account token and local port when run alongside another app.
+
 ## Integration ownership
 
 | Frontend code | Responsibility |
@@ -56,6 +69,11 @@ chapter or closing a tab aborts the previous stream. A fresh request ID prevents
 stale results from updating another position even when their first move remains legal.
 A tab can retry within a short window for its own aborted search; another tab receives
 an engine-busy status. Stop/drain and bounded subprocess recovery happen in the bridge.
+The browser allows quiet depth iterations and limits the entire stream to the
+requested 90-second movetime, or 15 minutes for depth-only searches, plus 30 seconds
+for completion and cleanup. Opening the stream retains its 30-second timeout.
+The local app may impose a shorter search limit. WASM searches are stopped before
+their controller is destroyed, including during Study chapter navigation.
 
 Selecting the browser engine returns to WASM analysis; Remove deletes the account
 registration. A bridge restart rotates its credential and updates its registration;
@@ -63,6 +81,11 @@ selecting the engine again or Retry fetches current credentials. Connection rest
 uses granted browser permission or a connection already established in the current
 page session, rather than repeatedly prompting on reload. The registration API accepts
 only loopback addresses and cannot choose native commands, files or engine options.
+WASM remains available during account discovery. Anonymous pages, missing or
+incompatible registrations, discovery failures, ungranted local-network permission
+and failed automatic connections keep or return to browser analysis. Explicit native
+selection still shows connection errors and Retry. Automatic fallback preserves the
+saved native preference until a connection attempt fails or the user changes source.
 
 ## Rules, moves and capabilities
 

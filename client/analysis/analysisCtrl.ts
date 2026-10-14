@@ -281,8 +281,9 @@ export class AnalysisController extends GameController {
                 analysisSettings.externalEngine.refresh();
             },
         });
-        this.engineSource = this.externalAllowed ? preferredEngineSource() : 'browser';
-        this.searchBackend = this.engineSource === 'external' ? this.externalSearch : this.browserSearch;
+        // Keep WASM available while discovering account engines. A saved native
+        // preference takes over only when this page can restore its connection.
+        this.searchBackend = this.browserSearch;
         try {
             this.externalRulesText = externalRulesIni(
                 variantConfigIni(variantsIni, this.variant.name),
@@ -492,10 +493,12 @@ export class AnalysisController extends GameController {
     override destroy(): void {
         this.cancelAnalysisSession();
         this.analysisExtension?.onDestroy?.();
+        // fsfPostMessage rejects commands after destruction, including the
+        // browser backend's stop/readiness barrier.
+        this.browserSearch.destroy();
         this.destroyed = true;
         this.searchGeneration++;
         this.connectionGeneration++;
-        this.browserSearch.destroy();
         this.externalSearch.destroy();
         this.restoreFsfPrompt();
         window.removeEventListener('storage', this.onAntiCheatStorage);
@@ -802,6 +805,7 @@ export class AnalysisController extends GameController {
     canUseExternalEngine(): boolean {
         return (
             !this.destroyed &&
+            !this.anon &&
             this.externalAllowed &&
             this.analysisContext.capabilities.engineTools &&
             this.analysisContext.capabilities.localAnalysisAllowed &&
@@ -958,27 +962,24 @@ export class AnalysisController extends GameController {
     private async restoreExternalEngine(): Promise<void> {
         if (this.anon || !this.externalAllowed) return;
         const generation = this.connectionGeneration;
+        const restore = preferredEngineSource() === 'external';
         try {
             const engines = await registeredExternalEngines();
-            if (this.destroyed) return;
+            if (this.destroyed || generation !== this.connectionGeneration) return;
             this.externalEngines = engines;
             analysisSettings.externalEngine.refresh();
         } catch {
             return;
         }
         const connection = this.externalEngines.find(engine => engine.id === this.externalEngineId);
-        if (!connection) {
-            if (!this.destroyed && generation === this.connectionGeneration && this.engineSource === 'external')
-                this.selectEngineSource('browser');
-            return;
-        }
-        if (!this.canUseExternalEngine() || this.engineSource !== 'external') return;
-        if (!(await mayRestoreExternalConnection(connection.address))) {
-            if (!this.destroyed && generation === this.connectionGeneration) this.selectEngineSource('browser');
-            return;
-        }
-        if (this.destroyed || generation !== this.connectionGeneration || this.engineSource !== 'external') return;
+        if (!restore || !connection || !this.canUseExternalEngine() || !this.supportsExternalEngine(connection)) return;
+        if (!(await mayRestoreExternalConnection(connection.address))) return;
+        if (this.destroyed || generation !== this.connectionGeneration || !this.canUseExternalEngine()) return;
         await this.connectExternalEngine(connection.address, connection.token);
+        // Explicit selection keeps its actionable connection error. Automatic
+        // restoration falls back without overriding a later user selection.
+        if (!this.destroyed && this.connectionGeneration === generation + 1 && this.externalFailure)
+            this.disconnectExternalEngine();
     }
 
     private refreshEngineLabel(): void {
