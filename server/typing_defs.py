@@ -507,6 +507,7 @@ class ViewContext(TypedDict, total=False):
     corr_push_enabled: bool
     rr_push_enabled: bool
     menu_variant: str
+    puzzle_variant: str
     title: str
     view: str
     view_css: str

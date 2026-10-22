@@ -215,6 +215,9 @@
 </article>
 {% else %}
 {% include variant %}
+{% if puzzle_variant %}
+<p><a class="button" href="/puzzle/{{ puzzle_variant }}">{% trans %}Puzzles{% endtrans %}</a></p>
+{% endif %}
 {% endif %}
 </div>
 </main>

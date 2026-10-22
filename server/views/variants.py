@@ -11,6 +11,7 @@ from catalogued_variants import (
 )
 from fairy.cwda import cwda_betza_diagram_groups
 from json_utils import json_dumps
+from puzzle import PUZZLE_VARIANTS
 from pychess_global_app_state_utils import get_app_state
 from typing_defs import ViewContext
 from variants import VARIANT_ICONS, VARIANTS
@@ -114,5 +115,7 @@ async def variants(request: web.Request) -> ViewContext:
     context["variant"] = item
     if variant == "cwda":
         context["cwda_army_diagrams"] = cwda_betza_diagram_groups()
+    if variant in PUZZLE_VARIANTS:
+        context["puzzle_variant"] = variant
 
     return context
