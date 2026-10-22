@@ -243,6 +243,10 @@ export class TournamentController implements ChatController {
         this.lifecycleActions = patch(this.lifecycleActions, this.renderLifecycleActions());
     }
 
+    updateButtons() {
+        this.buttons = patch(this.buttons, this.renderButtons());
+    }
+
     renderButtons() {
         return h('div#page-controls.btn-controls', [
             h('div.pager', [
@@ -951,7 +955,7 @@ export class TournamentController implements ChatController {
 
         this.updateActionButton();
         this.updateLifecycleActions();
-        this.buttons = patch(this.buttons, this.renderButtons());
+        this.updateButtons();
 
         if (!this.completed()) {
             initializeClock(this);
@@ -991,7 +995,7 @@ export class TournamentController implements ChatController {
         this.userStatus = msg.ustatus;
         syncTournamentStartAlerts(this);
         this.updateActionButton();
-        this.buttons = patch(this.buttons, this.renderButtons());
+        this.updateButtons();
     }
 
     private onMsgTournamentStatus(msg: MsgTournamentStatus) {
